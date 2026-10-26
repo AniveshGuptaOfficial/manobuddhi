@@ -1,196 +1,1092 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ManoBuddhi — Dual-Process LLM Inference Router</title>
-  <style>
-    :root { --bg:#0b0f14; --panel:#11161d; --border:#1f2933; --text:#e6edf3; --muted:#8b98a5; --accent:#4f8cff; --fast:#2fbf71; --escalate:#f2a93b; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
-    header { padding:14px 20px; border-bottom:1px solid var(--border); background:var(--panel); display:flex; align-items:center; gap:10px; }
-    header h1 { font-size:18px; margin:0; }
-    header .tag { color:var(--muted); font-size:12px; }
-    main { display:grid; grid-template-columns: 1fr 340px; gap:16px; padding:16px; max-width:1400px; margin:0 auto; }
-    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
-    section { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; }
-    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; }
-    #chat { display:flex; flex-direction:column; gap:10px; height: 55vh; overflow:auto; }
-    .msg { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#0d1218; }
-    .msg.user { align-self:flex-end; max-width:85%; background:#12202f; border-color:#1c3a55; }
-    .msg.assistant { align-self:flex-start; max-width:95%; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
-    .badge.fast { background:rgba(47,191,113,.15); color:var(--fast); border:1px solid rgba(47,191,113,.4); }
-    .badge.escalate { background:rgba(242,169,59,.15); color:var(--escalate); border:1px solid rgba(242,169,59,.4); }
-    .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px; color:var(--muted); margin-top:6px; }
-    .kv b { color:var(--text); font-weight:600; }
-    #composer { display:flex; gap:8px; margin-top:10px; }
-    #composer input { flex:1; background:#0d1218; border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text); font-size:14px; }
-    button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
-    button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
-    .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    .card { background:#0d1218; border:1px solid var(--border); border-radius:10px; padding:10px; }
-    .card .v { font-size:20px; font-weight:700; margin-top:4px; }
-    .card .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
-    #log { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:220px; overflow:auto; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ManoBuddhi — Dual-Process LLM Router</title>
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --panel-2: #1a1a24;
+    --border: #262633;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --accent: #8b5cf6;
+    --fast: #10b981;
+    --escalated: #f59e0b;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+  .panel-2 { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
+  .btn { padding: 8px 14px; border-radius: 8px; font-weight: 500; transition: all .15s; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: #7c3aed; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { background: var(--panel-2); }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .03em; white-space: nowrap; }
+  .badge-fast { background: rgba(16,185,129,.15); color: var(--fast); border: 1px solid rgba(16,185,129,.3); }
+  .badge-escalated { background: rgba(245,158,11,.15); color: var(--escalated); border: 1px solid rgba(245,158,11,.3); }
+  .badge-muted { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+  .badge-danger { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+  .badge-accent { background: rgba(139,92,246,.15); color: #a78bfa; border: 1px solid rgba(139,92,246,.3); }
+  .nav-item { padding: 10px 14px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--muted); transition: all .15s; }
+  .nav-item:hover { background: var(--panel-2); color: var(--text); }
+  .nav-item.active { background: rgba(139,92,246,.12); color: var(--accent); }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadeIn .2s ease; }
+  #screen-playground.active { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+  .typing-dot { animation: pulse-dot 1.2s infinite; }
+  .gauge-ring { transition: stroke-dashoffset .8s cubic-bezier(.4,0,.2,1); }
+  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  input, select, textarea { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 8px; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); padding: 0; }
+  input[type=range] { padding: 0; accent-color: var(--accent); }
+  .bar { height: 8px; border-radius: 4px; background: var(--panel); overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #a78bfa); transition: width .6s; }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); z-index: 50; display: none; align-items: center; justify-content: center; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; max-width: 900px; width: 92%; max-height: 88vh; overflow: auto; }
+  .stat-card { padding: 16px; }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat-delta { font-size: 12px; margin-top: 4px; color: var(--muted); }
+  .kbd { font-family: ui-monospace, monospace; font-size: 11px; padding: 2px 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+  .kv > div { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .kv .k { font-size: 11px; color: var(--muted); }
+  .kv .v { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sim-banner { background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.25); color: #fbbf24; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+  .num { font-variant-numeric: tabular-nums; }
+  label.field { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .err { color: var(--danger); font-size: 12px; }
+</style>
 </head>
-<body>
-  <header>
-    <h1>ManoBuddhi</h1>
-    <span class="tag">Dual-Process LLM Inference Router</span>
-  </header>
-  <main>
-    <section>
-      <h2>Playground</h2>
-      <div id="chat"></div>
-      <div id="composer">
-        <input id="q" placeholder="Type a query and press Enter..." autocomplete="off" />
-        <button id="send">Send</button>
+<body class="min-h-screen">
+
+<div class="flex min-h-screen">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="w-64 shrink-0 border-r border-[var(--border)] p-4 flex flex-col" style="background: var(--panel);">
+    <div class="flex items-center gap-2 px-2 mb-6">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background: linear-gradient(135deg, #8b5cf6, #ec4899);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <div>
+        <div class="font-bold text-sm">ManoBuddhi</div>
+        <div class="text-xs text-[var(--muted)]">Dual-Process Router</div>
+      </div>
+    </div>
+
+    <nav class="flex flex-col gap-1 flex-1">
+      <div class="nav-item active" data-screen="playground">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        Playground
+      </div>
+      <div class="nav-item" data-screen="benchmark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Benchmark Lab
+      </div>
+      <div class="nav-item" data-screen="dashboard">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 4 4 6-6"/></svg>
+        Savings Dashboard
+      </div>
+      <div class="nav-item" data-screen="settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </div>
+      <div class="nav-item" data-screen="admin">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        System Status
+      </div>
+    </nav>
+
+    <div class="mt-4 p-3 rounded-lg" style="background: var(--panel-2);">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs font-semibold text-[var(--muted)]">BACKEND</span>
+        <span id="statusDot" class="dot" style="background: var(--muted);"></span>
+      </div>
+      <div class="text-xs" id="statusLabel">Connecting…</div>
+      <div class="text-[10px] text-[var(--muted)] mt-1" id="statusSub">—</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
+
+    <!-- ========== PLAYGROUND ========== -->
+    <section id="screen-playground" class="screen active flex-col h-screen">
+      <header class="border-b border-[var(--border)] px-6 py-4 flex items-center justify-between gap-4" style="background: var(--panel);">
+        <div>
+          <h1 class="text-lg font-semibold">Playground</h1>
+          <p class="text-xs text-[var(--muted)]">Chat with adaptive routing · Fast ↔ Escalated</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 text-xs text-[var(--muted)]">
+            <span class="dot" style="background: var(--fast);"></span>
+            <span id="fastModelLabel">—</span>
+            <span class="mx-1">→</span>
+            <span class="dot" style="background: var(--escalated);"></span>
+            <span id="slowModelLabel">—</span>
+          </div>
+          <button class="btn btn-ghost text-xs" onclick="clearChat()">Clear</button>
+        </div>
+      </header>
+
+      <div id="simBanner" class="sim-banner text-xs px-6 py-2 hidden">
+        Placeholder router: answers and scores are simulated until the real models are connected (F4–F5). Do not report these numbers.
+      </div>
+
+      <div id="chatMessages" class="flex-1 overflow-y-auto scroll-thin px-6 py-6 space-y-4">
+        <div class="flex gap-3">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, #8b5cf6, #ec4899);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-semibold text-sm">ManoBuddhi</span>
+              <span class="badge badge-muted">SYSTEM</span>
+            </div>
+            <div class="text-sm text-[var(--muted)] leading-relaxed">
+              The fast model answers first. If the <em>conflict score</em> (hidden-state probe + disagreement among K fast samples) crosses the threshold, the query escalates to slow reasoning. Try a trick question, a maths problem, or a greeting, then press <b>Inspect</b>.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border-t border-[var(--border)] px-6 py-4" style="background: var(--panel);">
+        <div class="flex gap-2">
+          <input id="chatInput" type="text" placeholder="Ask anything… (try: 'A bat and a ball cost $1.10. The bat costs $1 more than the ball. How much is the ball?')" class="flex-1 min-w-0" onkeydown="if(event.key==='Enter') sendChat()">
+          <button id="sendBtn" class="btn btn-primary" onclick="sendChat()">Send</button>
+        </div>
+        <div class="flex items-center justify-between mt-2 text-xs text-[var(--muted)]">
+          <div><span class="kbd">Enter</span> send · <span class="kbd">Esc</span> close inspector</div>
+          <div id="sessionStats" class="num">0 queries · 0 tokens · 0.00 GPU-s</div>
+        </div>
       </div>
     </section>
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <section>
-        <h2>Live Metrics</h2>
-        <div class="cards" id="metrics"></div>
-      </section>
-      <section>
-        <h2>Settings</h2>
-        <div id="settings"></div>
-        <button id="saveSettings" class="ghost">Save Settings</button>
-      </section>
-      <section>
-        <h2>Eval</h2>
-        <div style="display:flex;gap:8px;">
-          <select id="bench"></select>
-          <button id="runEval">Run</button>
+
+    <!-- ========== BENCHMARK LAB ========== -->
+    <section id="screen-benchmark" class="screen p-6 overflow-y-auto scroll-thin h-screen">
+      <header class="mb-6">
+        <h1 class="text-lg font-semibold">Benchmark Lab</h1>
+        <p class="text-xs text-[var(--muted)]">Run evaluations on the fixed splits · export per-item CSV for the paper</p>
+      </header>
+
+      <div class="panel p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+          <div class="md:col-span-2">
+            <label class="field">Benchmark</label>
+            <select id="benchSelect" class="w-full" onchange="onBenchChange()"></select>
+          </div>
+          <div>
+            <label class="field">Split</label>
+            <select id="splitSelect" class="w-full" onchange="onSplitChange()"></select>
+          </div>
+          <div>
+            <label class="field">Items</label>
+            <input id="benchSize" type="number" min="1" placeholder="all" class="w-full">
+          </div>
+          <div>
+            <label class="field">Router</label>
+            <select id="baselineSelect" class="w-full">
+              <option value="manobuddhi">ManoBuddhi (conflict-gated)</option>
+              <option value="always_fast">Baseline: always fast</option>
+              <option value="always_slow">Baseline: always slow</option>
+            </select>
+          </div>
         </div>
-        <div id="evalLog" style="margin-top:8px;"></div>
-      </section>
-    </div>
+        <div class="flex items-center justify-between mt-4 gap-3">
+          <div class="text-xs text-[var(--muted)]" id="benchHint">Runs use the current Settings; each run stores the exact config it used.</div>
+          <button id="launchBtn" class="btn btn-primary" onclick="launchBenchmark()">Launch job</button>
+        </div>
+        <div id="launchErr" class="err mt-2"></div>
+      </div>
+
+      <div class="panel p-4 mb-6">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-semibold text-sm">Runs</div>
+          <button class="btn btn-ghost text-xs" onclick="refreshJobs()">Refresh</button>
+        </div>
+        <div id="jobList" class="space-y-3">
+          <div class="text-xs text-[var(--muted)] text-center py-6">No runs yet</div>
+        </div>
+      </div>
+
+      <div class="panel p-4">
+        <div class="font-semibold text-sm mb-1">Accuracy vs GPU-seconds per query</div>
+        <div class="text-xs text-[var(--muted)] mb-3">Finished runs · up and to the left is better · compare ManoBuddhi with the two baselines on the same benchmark</div>
+        <canvas id="accChart" height="120"></canvas>
+      </div>
+    </section>
+
+    <!-- ========== DASHBOARD ========== -->
+    <section id="screen-dashboard" class="screen p-6 overflow-y-auto scroll-thin h-screen">
+      <header class="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <h1 class="text-lg font-semibold">Savings Dashboard</h1>
+          <p class="text-xs text-[var(--muted)]">From the request log · refreshes every 5 s</p>
+        </div>
+        <div>
+          <label class="field">Traffic</label>
+          <select id="dashSource" onchange="renderDashboard()">
+            <option value="playground">Playground</option>
+            <option value="eval">Benchmark runs</option>
+            <option value="">All</option>
+          </select>
+        </div>
+      </header>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="panel stat-card">
+          <div class="stat-label">GPU-seconds saved</div>
+          <div class="stat-value" id="statGpu">—</div>
+          <div class="stat-delta" id="statGpuDelta">vs. always-slow estimate</div>
+        </div>
+        <div class="panel stat-card">
+          <div class="stat-label">Escalation rate</div>
+          <div class="stat-value" id="statEsc">—</div>
+          <div class="stat-delta" id="statEscDelta">of queries routed slow</div>
+        </div>
+        <div class="panel stat-card">
+          <div class="stat-label">p95 latency</div>
+          <div class="stat-value" id="statP95">—</div>
+          <div class="stat-delta" id="statP95Delta">p50 —</div>
+        </div>
+        <div class="panel stat-card">
+          <div class="stat-label">Tokens / query</div>
+          <div class="stat-value" id="statTok">—</div>
+          <div class="stat-delta" id="statTokDelta">— queries</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div class="panel p-4">
+          <div class="font-semibold text-sm mb-3">Routing decisions (last 30)</div>
+          <canvas id="routingChart" height="140"></canvas>
+        </div>
+        <div class="panel p-4">
+          <div class="font-semibold text-sm mb-3">Latency distribution (ms)</div>
+          <canvas id="latencyChart" height="140"></canvas>
+        </div>
+      </div>
+
+      <div class="panel p-4">
+        <div class="font-semibold text-sm mb-3">Recent queries</div>
+        <div class="overflow-x-auto scroll-thin">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs text-[var(--muted)] border-b border-[var(--border)]">
+                <th class="pb-2 pr-3">Query</th>
+                <th class="pb-2 pr-3">Route</th>
+                <th class="pb-2 pr-3">Conflict / θ</th>
+                <th class="pb-2 pr-3">Latency</th>
+                <th class="pb-2 pr-3">Tokens</th>
+                <th class="pb-2">Correct</th>
+              </tr>
+            </thead>
+            <tbody id="recentTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SETTINGS ========== -->
+    <section id="screen-settings" class="screen p-6 overflow-y-auto scroll-thin h-screen">
+      <header class="mb-6">
+        <h1 class="text-lg font-semibold">Settings</h1>
+        <p class="text-xs text-[var(--muted)]">Router configuration · validated and saved on the server · applies to new queries and runs</p>
+      </header>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel p-5">
+          <div class="font-semibold text-sm mb-4">Model pair</div>
+          <div class="space-y-3">
+            <div>
+              <label class="field">Configuration</label>
+              <select id="cfgMode" class="w-full">
+                <option value="single_model_nothink_think">Config A: one Qwen3 model, no-think → think</option>
+                <option value="small_large">Config B: small → large (Qwen2.5)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field">Fast model</label>
+              <input id="cfgFast" list="fastModels" class="w-full">
+              <datalist id="fastModels">
+                <option value="Qwen/Qwen2.5-1.5B-Instruct"><option value="Qwen/Qwen2.5-3B-Instruct"><option value="Qwen/Qwen3-4B"><option value="Qwen/Qwen3-8B">
+              </datalist>
+            </div>
+            <div>
+              <label class="field">Slow model</label>
+              <input id="cfgSlow" list="slowModels" class="w-full">
+              <datalist id="slowModels">
+                <option value="Qwen/Qwen2.5-7B-Instruct"><option value="Qwen/Qwen3-4B"><option value="Qwen/Qwen3-8B">
+              </datalist>
+            </div>
+            <div class="text-xs text-[var(--muted)]">In Config A only the slow model is used, in no-think mode first and think mode on escalation.</div>
+          </div>
+        </div>
+
+        <div class="panel p-5">
+          <div class="font-semibold text-sm mb-4">Threshold</div>
+          <div class="space-y-3">
+            <div>
+              <label class="field">Mode</label>
+              <select id="cfgThreshMode" class="w-full">
+                <option value="fixed">Fixed threshold</option>
+                <option value="budget_driven">Budget-driven (latency-aware)</option>
+              </select>
+            </div>
+            <div>
+              <label class="field">Base threshold θ (0–1)</label>
+              <input id="cfgThresh" type="number" min="0" max="1" step="0.01" class="w-full">
+            </div>
+            <div>
+              <label class="field">Latency budget</label>
+              <input type="range" id="cfgBudget" min="200" max="5000" step="100" class="w-full" oninput="$('budgetVal').textContent=this.value+' ms'">
+              <div class="flex justify-between text-xs text-[var(--muted)] mt-1">
+                <span>200 ms</span><span id="budgetVal" class="font-semibold text-[var(--accent)]">—</span><span>5000 ms</span>
+              </div>
+            </div>
+            <div class="text-xs text-[var(--muted)] p-3 rounded" style="background: var(--panel-2);">
+              Certified set: <b id="calibN">500</b> calibration items per benchmark. The learn-then-test guarantee (α, δ) is added in F6; until then budget-driven mode uses a provisional rule.
+            </div>
+          </div>
+        </div>
+
+        <div class="panel p-5">
+          <div class="font-semibold text-sm mb-4">Conflict signal</div>
+          <div class="space-y-3">
+            <label class="flex items-center justify-between text-sm"><span>Hidden-state probe</span><input type="checkbox" id="cfgProbe"></label>
+            <label class="flex items-center justify-between text-sm"><span>K-sample disagreement</span><input type="checkbox" id="cfgDisagree"></label>
+            <div>
+              <label class="field">K (fast samples, 1–8)</label>
+              <input id="cfgK" type="number" min="1" max="8" class="w-full">
+            </div>
+            <div>
+              <label class="field">Probe layer</label>
+              <select id="cfgLayer" class="w-full">
+                <option value="late">Last token, late layers</option>
+                <option value="middle">Last token, middle layers</option>
+                <option value="aggregate">Aggregated across layers</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel p-5">
+          <div class="font-semibold text-sm mb-4">Fast-path reuse</div>
+          <div class="space-y-3">
+            <label class="flex items-center justify-between text-sm"><span>Reuse prompt KV prefix (Config A)</span><input type="checkbox" id="cfgReuseKv"></label>
+            <label class="flex items-center justify-between text-sm"><span>Speculative draft from fast answer (Config B)</span><input type="checkbox" id="cfgReuseDraft"></label>
+            <div class="text-xs text-[var(--muted)] p-3 rounded" style="background: var(--panel-2);">
+              On escalation the fast-path work is kept instead of thrown away (gap G4).
+            </div>
+          </div>
+        </div>
+
+        <div class="panel p-5 lg:col-span-2">
+          <div class="font-semibold text-sm mb-4">Infrastructure</div>
+          <div class="kv" id="infraKv"></div>
+          <div class="text-xs text-[var(--muted)] mt-3">Connection details and passwords live in the server's <span class="kbd">.env</span> file, not in the browser.</div>
+          <div class="flex items-center gap-2 mt-4">
+            <button id="saveBtn" class="btn btn-primary" onclick="saveSettings()">Save &amp; apply</button>
+            <button class="btn btn-ghost" onclick="resetSettings()">Reset to defaults</button>
+            <span id="settingsErr" class="err"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SYSTEM STATUS ========== -->
+    <section id="screen-admin" class="screen p-6 overflow-y-auto scroll-thin h-screen">
+      <header class="mb-6">
+        <h1 class="text-lg font-semibold">System Status</h1>
+        <p class="text-xs text-[var(--muted)]">Service health · refreshes every 5 s</p>
+      </header>
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="sysCards"></div>
+      <div class="panel p-4 mt-4">
+        <div class="font-semibold text-sm mb-3">Recent request log</div>
+        <div class="font-mono text-xs space-y-1 max-h-72 overflow-y-auto scroll-thin" id="sysLog"></div>
+      </div>
+    </section>
+
   </main>
+</div>
 
-  <script>
-    const chat = document.getElementById('chat');
-    const metricsEl = document.getElementById('metrics');
-    const settingsEl = document.getElementById('settings');
-    const evalLog = document.getElementById('evalLog');
-    const bench = document.getElementById('bench');
-    const send = document.getElementById('send');
-    const saveSettings = document.getElementById('saveSettings');
-    const runEval = document.getElementById('runEval');
-    const q = document.getElementById('q');
+<!-- ============ CONFLICT INSPECTOR MODAL ============ -->
+<div id="inspectorModal" class="modal-backdrop" onclick="if(event.target===this) closeInspector()">
+  <div class="modal p-6">
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div class="min-w-0">
+        <h2 class="font-semibold">Conflict Inspector</h2>
+        <p class="text-xs text-[var(--muted)] truncate" id="inspectorQuery">—</p>
+      </div>
+      <button class="btn btn-ghost text-xs shrink-0" onclick="closeInspector()">Close <span class="kbd ml-1">Esc</span></button>
+    </div>
 
-    const api = async (path, opts = {}) => {
-      const res = await fetch(path, {
-        headers: { 'Content-Type': 'application/json' },
-        ...opts,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
-      return res.json();
-    };
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div class="panel-2 p-4 flex flex-col items-center">
+        <div class="text-xs text-[var(--muted)] mb-2">CONFLICT SCORE</div>
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="60" stroke="var(--border)" stroke-width="10" fill="none"/>
+          <circle id="gaugeRing" class="gauge-ring" cx="70" cy="70" r="60" stroke="var(--accent)" stroke-width="10" fill="none"
+            stroke-dasharray="377" stroke-dashoffset="377" stroke-linecap="round" transform="rotate(-90 70 70)"/>
+          <line id="gaugeTick" x1="70" y1="4" x2="70" y2="18" stroke="var(--text)" stroke-width="2" transform="rotate(0 70 70)"/>
+          <text x="70" y="75" text-anchor="middle" fill="var(--text)" font-size="24" font-weight="700" id="gaugeText">0.00</text>
+          <text x="70" y="95" text-anchor="middle" fill="var(--muted)" font-size="10" id="gaugeSub">θ = —</text>
+        </svg>
+        <div class="text-xs mt-2" id="gaugeVerdict">—</div>
+      </div>
 
-    async function sendMessage() {
-      const query = q.value.trim();
-      if (!query) return;
-      const userMsg = { role: 'user', content: query };
-      chat.appendChild(msgEl('user', query));
-      q.value = '';
-      const asst = msgEl('assistant', '...');
-      chat.appendChild(asst);
-      const data = await api('/v1/chat/completions', {
-        method: 'POST',
-        body: JSON.stringify({ query }),
-      });
-      asst.innerHTML = '';
-      asst.appendChild(document.createTextNode(data.content || ''));
-      const badge = document.createElement('span');
-      badge.className = 'badge ' + data.route;
-      badge.textContent = data.route.toUpperCase();
-      asst.appendChild(document.createElement('br'));
-      asst.appendChild(badge);
-      const kv = document.createElement('div');
-      kv.className = 'kv';
-      const rows = [
-        ['route', data.route],
-        ['conflict_score', data.conflict_score],
-        ['probe_score', data.probe_score],
-        ['threshold', data.threshold],
-        ['escalation_source', data.escalation_source],
-        ['mode', data.mode],
-        ['tokens_generated', data.tokens_generated],
-        ['latency_ms', data.latency_ms],
+      <div class="panel-2 p-4">
+        <div class="text-xs text-[var(--muted)] mb-3">SIGNAL BREAKDOWN</div>
+        <div class="space-y-3">
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span>Probe score</span><span id="probeVal" class="font-semibold num">—</span></div>
+            <div class="bar"><div class="bar-fill" id="probeBar" style="width:0%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span>Sample disagreement</span><span id="disagreeVal" class="font-semibold num">—</span></div>
+            <div class="bar"><div class="bar-fill" id="disagreeBar" style="width:0%"></div></div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1"><span>Log-prob confidence (baseline)</span><span id="confVal" class="font-semibold num">—</span></div>
+            <div class="bar"><div class="bar-fill" id="confBar" style="width:0%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-2 p-4">
+        <div class="text-xs text-[var(--muted)] mb-3">DECISION</div>
+        <div id="decisionBadge" class="mb-3"></div>
+        <div class="text-xs space-y-2 text-[var(--muted)]">
+          <div>Threshold θ: <span class="text-[var(--text)] font-semibold num" id="inspectorThresh">—</span></div>
+          <div>Threshold mode: <span class="text-[var(--text)] font-semibold" id="inspectorMode">—</span></div>
+          <div>Latency budget: <span class="text-[var(--text)] font-semibold num" id="inspectorBudget">—</span></div>
+          <div>Fast-path reuse: <span class="text-[var(--text)] font-semibold" id="inspectorReuse">—</span></div>
+          <div>Playground p95: <span class="text-[var(--text)] font-semibold num" id="inspectorP95">—</span></div>
+          <div>Router: <span class="text-[var(--text)] font-semibold" id="inspectorBackend">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="panel-2 p-4 min-w-0">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="badge badge-fast">FAST PATH</span>
+          <span class="text-xs text-[var(--muted)] num" id="fastMeta">—</span>
+        </div>
+        <div class="text-sm leading-relaxed whitespace-pre-wrap break-words" id="fastAnswer">—</div>
+      </div>
+      <div class="panel-2 p-4 min-w-0">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="badge badge-escalated">SLOW PATH</span>
+          <span class="text-xs text-[var(--muted)] num" id="slowMeta">—</span>
+        </div>
+        <div class="text-sm leading-relaxed whitespace-pre-wrap break-words" id="slowAnswer">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   MANOBUDDHI FRONTEND (F3) — talks to the FastAPI backend on the same origin.
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+const DEFAULTS = {
+  mode: 'small_large', fast_model: 'Qwen/Qwen2.5-1.5B-Instruct', slow_model: 'Qwen/Qwen2.5-7B-Instruct',
+  k_fast_samples: 3, threshold_mode: 'budget_driven', fixed_threshold: 0.5, default_latency_budget_ms: 1500,
+  probe_enabled: true, disagreement_enabled: true, probe_layer: 'late', reuse_kv_prefix: true,
+  reuse_spec_draft: true, router_backend: 'placeholder',
+};
+
+const state = {
+  settings: null,
+  system: null,
+  responses: {},          // request_id -> chat response (for the inspector)
+  session: { n: 0, tokens: 0, gpu: 0 },
+  charts: {},
+  screen: 'playground',
+  timers: {},
+  pollingJobs: false,
+};
+
+/* ---------- helpers ---------- */
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const fmt = {
+  num: (v, d = 2) => v == null || isNaN(v) ? '—' : Number(v).toFixed(d),
+  pct: v => v == null || isNaN(v) ? '—' : (v * 100).toFixed(1) + '%',
+  ms: v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString() + ' ms',
+  int: v => v == null || isNaN(v) ? '—' : Math.round(v).toLocaleString(),
+};
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const text = await res.text();
+  let data;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) {
+    let msg = res.status + ' ' + res.statusText;
+    if (data && data.detail) {
+      msg = typeof data.detail === 'string' ? data.detail
+        : data.detail.map(d => `${(d.loc || []).slice(-1)[0]}: ${d.msg}`).join('; ');
+    }
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function flash(msg, kind = 'ok') {
+  const el = document.createElement('div');
+  el.className = 'fixed top-4 right-4 panel px-4 py-2 text-sm z-50';
+  el.style.background = kind === 'ok' ? 'var(--accent)' : 'var(--danger)';
+  el.style.color = 'white';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+function makeChart(key, canvasId, config) {
+  if (!window.Chart) return;  // CDN unavailable: page still works without charts
+  if (state.charts[key]) state.charts[key].destroy();
+  state.charts[key] = new Chart($(canvasId), config);
+}
+
+function chartOpts(stacked, extra = {}) {
+  return {
+    responsive: true, animation: false,
+    plugins: { legend: { labels: { color: '#9ca3af', font: { size: 11 } } } },
+    scales: {
+      x: { stacked, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,.04)' } },
+      y: { stacked, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,.04)' }, beginAtZero: true },
+    },
+    ...extra,
+  };
+}
+
+/* ---------- navigation + refresh loops ---------- */
+document.querySelectorAll('.nav-item').forEach(el => el.addEventListener('click', () => showScreen(el.dataset.screen)));
+
+function showScreen(name) {
+  state.screen = name;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.toggle('active', n.dataset.screen === name));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
+  clearInterval(state.timers.screen);
+  if (name === 'dashboard') { renderDashboard(); state.timers.screen = setInterval(renderDashboard, 5000); }
+  if (name === 'admin') { renderSystem(); state.timers.screen = setInterval(renderSystem, 5000); }
+  if (name === 'benchmark') { loadBenchmarks(); refreshJobs(); }
+  if (name === 'settings') loadSettings();
+}
+
+/* ---------- backend status (sidebar) ---------- */
+async function refreshStatus() {
+  try {
+    const s = await api('/v1/system');
+    state.system = s;
+    const ok = s.postgres.ok && s.redis.ok;
+    $('statusDot').style.background = ok ? 'var(--fast)' : 'var(--escalated)';
+    $('statusLabel').textContent = ok ? 'Connected' : 'Degraded';
+    const sim = s.router_backend === 'placeholder';
+    $('statusSub').textContent = `Router: ${s.router_backend}${sim ? ' (simulated)' : ''} · workers ${s.redis.ok ? s.redis.workers : '—'}`;
+    $('simBanner').classList.toggle('hidden', !sim);
+  } catch (e) {
+    $('statusDot').style.background = 'var(--danger)';
+    $('statusLabel').textContent = 'API unreachable';
+    $('statusSub').textContent = 'Is uvicorn running?';
+  }
+}
+
+/* ---------- Playground ---------- */
+function avatar(role) {
+  return role === 'user'
+    ? `<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: var(--panel-2); border: 1px solid var(--border);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>`
+    : `<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, #8b5cf6, #ec4899);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg></div>`;
+}
+
+function appendMessage(role, html, id) {
+  const c = $('chatMessages');
+  const div = document.createElement('div');
+  div.className = 'flex gap-3';
+  if (id) div.id = id;
+  div.innerHTML = `${avatar(role)}<div class="flex-1 min-w-0">${html}</div>`;
+  c.appendChild(div);
+  c.scrollTop = c.scrollHeight;
+  return div;
+}
+
+function routeBadge(route) {
+  return route === 'escalated' ? '<span class="badge badge-escalated">ESCALATED</span>' : '<span class="badge badge-fast">FAST</span>';
+}
+
+async function sendChat() {
+  const input = $('chatInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  $('sendBtn').disabled = true;
+  appendMessage('user', `<div class="font-semibold text-sm mb-1">You</div><div class="text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(q)}</div>`);
+  const typing = appendMessage('assistant', `<div class="flex items-center gap-1 pt-2">
+      <span class="typing-dot w-1.5 h-1.5 rounded-full bg-[var(--muted)]"></span>
+      <span class="typing-dot w-1.5 h-1.5 rounded-full bg-[var(--muted)]" style="animation-delay:.2s"></span>
+      <span class="typing-dot w-1.5 h-1.5 rounded-full bg-[var(--muted)]" style="animation-delay:.4s"></span></div>`);
+  try {
+    const d = await api('/v1/chat/completions', { method: 'POST', body: JSON.stringify({ messages: [{ role: 'user', content: q }] }) });
+    d._query = q;
+    state.responses[d.request_id] = d;
+    typing.remove();
+    appendMessage('assistant', `
+      <div class="flex items-center gap-2 mb-1">
+        <span class="font-semibold text-sm">ManoBuddhi</span>${routeBadge(d.route)}
+        ${d.simulated ? '<span class="badge badge-muted">SIMULATED</span>' : ''}
+        <button class="text-xs text-[var(--accent)] hover:underline ml-auto" onclick="openInspector(${Number(d.request_id)})">Inspect →</button>
+      </div>
+      <div class="text-sm leading-relaxed whitespace-pre-wrap break-words">${escapeHtml(d.content)}</div>
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-[var(--muted)] num">
+        <span>${fmt.int(d.usage.total_tokens)} tokens</span><span>·</span>
+        <span>${fmt.ms(d.latency_ms)}</span><span>·</span>
+        <span>conflict ${fmt.num(d.conflict_score)} / θ ${fmt.num(d.threshold)}</span><span>·</span>
+        <span>${fmt.num(d.gpu_seconds)} GPU-s</span>
+      </div>`, 'msg-' + d.request_id);
+    state.session.n++; state.session.tokens += d.usage.total_tokens; state.session.gpu += d.gpu_seconds;
+    updateSessionStats();
+  } catch (e) {
+    typing.remove();
+    appendMessage('assistant', `<div class="flex items-center gap-2 mb-1"><span class="font-semibold text-sm">ManoBuddhi</span><span class="badge badge-danger">ERROR</span></div>
+      <div class="text-sm text-[var(--danger)]">${escapeHtml(e.message)}</div>`);
+  } finally {
+    $('sendBtn').disabled = false;
+    input.focus();
+  }
+}
+
+function clearChat() {
+  const c = $('chatMessages');
+  [...c.children].slice(1).forEach(n => n.remove());
+  state.session = { n: 0, tokens: 0, gpu: 0 };
+  updateSessionStats();
+}
+
+function updateSessionStats() {
+  const s = state.session;
+  $('sessionStats').textContent = `${s.n} ${s.n === 1 ? 'query' : 'queries'} · ${s.tokens.toLocaleString()} tokens · ${s.gpu.toFixed(2)} GPU-s`;
+}
+
+/* ---------- Conflict Inspector ---------- */
+function setBar(id, valId, v, label) {
+  $(valId).textContent = label;
+  $(id).style.width = v == null ? '0%' : Math.max(0, Math.min(1, v)) * 100 + '%';
+}
+
+async function openInspector(requestId) {
+  const d = state.responses[requestId];
+  if (!d) return;
+  $('inspectorQuery').textContent = d._query || '';
+  const c = Math.max(0, Math.min(1, d.conflict_score || 0));
+  $('gaugeText').textContent = fmt.num(d.conflict_score);
+  $('gaugeSub').textContent = `θ = ${fmt.num(d.threshold)}`;
+  $('gaugeRing').setAttribute('stroke-dashoffset', 377 * (1 - c));
+  $('gaugeRing').setAttribute('stroke', d.route === 'escalated' ? 'var(--escalated)' : 'var(--fast)');
+  $('gaugeTick').setAttribute('transform', `rotate(${360 * Math.max(0, Math.min(1, d.threshold || 0))} 70 70)`);
+  $('gaugeVerdict').innerHTML = d.route === 'escalated'
+    ? `${routeBadge('escalated')} conflict ≥ θ` : `${routeBadge('fast')} conflict &lt; θ`;
+
+  setBar('probeBar', 'probeVal', d.probe_score, d.probe_score == null ? 'off' : fmt.num(d.probe_score));
+  if (d.disagreement == null) setBar('disagreeBar', 'disagreeVal', null, 'off');
+  else setBar('disagreeBar', 'disagreeVal', d.disagreement, `${Math.round(d.disagreement * d.k_samples)}/${d.k_samples}`);
+  setBar('confBar', 'confVal', d.confidence, fmt.num(d.confidence));
+
+  $('decisionBadge').innerHTML = d.route === 'escalated'
+    ? '<span class="badge badge-escalated">SLOW PATH USED</span>' : '<span class="badge badge-fast">FAST PATH ONLY</span>';
+  $('inspectorThresh').textContent = fmt.num(d.threshold);
+  $('inspectorMode').textContent = d.threshold_mode === 'budget_driven' ? 'budget-driven' : 'fixed';
+  $('inspectorBudget').textContent = fmt.ms(d.latency_budget_ms);
+  $('inspectorReuse').textContent = d.reuse_method ? d.reuse_method.replace('_', ' ') : (d.route === 'escalated' ? 'none' : '—');
+  $('inspectorBackend').textContent = d.router_backend + (d.simulated ? ' (simulated)' : '');
+  $('inspectorP95').textContent = '…';
+
+  const fast = d.paths.find(p => p.path === 'fast');
+  const samples = d.paths.filter(p => p.path === 'fast_sample').length;
+  const slow = d.paths.find(p => p.path === 'slow');
+  $('fastAnswer').textContent = d.fast_answer || '—';
+  $('fastMeta').textContent = fast
+    ? `${fast.model} · ${fast.completion_tokens} tokens · ${fmt.ms(fast.latency_ms)}${samples ? ` · +${samples} samples` : ''}` : '—';
+  if (slow) {
+    $('slowAnswer').textContent = d.slow_answer || '—';
+    $('slowMeta').textContent = `${slow.model} · ${slow.completion_tokens} tokens · ${fmt.ms(slow.latency_ms)}${slow.reused_tokens ? ` · ${slow.reused_tokens} reused` : ''}`;
+  } else {
+    $('slowAnswer').textContent = '(not invoked: the fast path was sufficient)';
+    $('slowMeta').textContent = 'skipped';
+  }
+  $('inspectorModal').classList.add('open');
+  try {
+    const m = await api('/v1/metrics?source=playground');
+    $('inspectorP95').textContent = fmt.ms(m.p95_latency_ms);
+  } catch { $('inspectorP95').textContent = '—'; }
+}
+
+function closeInspector() { $('inspectorModal').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInspector(); });
+
+/* ---------- Benchmark Lab ---------- */
+let benchmarks = [];
+const BENCH_LABELS = {
+  gsm8k: 'GSM8K (grade-school math)', math: 'MATH / MATH-500 (competition)', strategyqa: 'StrategyQA (multi-hop yes/no)',
+  commonsenseqa: 'CommonsenseQA', traps_hagendorff: 'CRT-style traps (Hagendorff)', traps_gsm_plus: 'GSM-Plus distractors',
+  traps_gsm_ic: 'GSM-IC irrelevant context', popqa: 'PopQA (RAG gate)', triviaqa: 'TriviaQA (RAG gate)', nq_open: 'NQ-Open (RAG gate)',
+};
+const GROUP_LABELS = { core: 'Core benchmarks', traps: 'Trap items (O1)', rag: 'RAG retrieval gate' };
+
+async function loadBenchmarks() {
+  if (benchmarks.length) return;
+  try {
+    benchmarks = await api('/v1/benchmarks');
+  } catch (e) { $('launchErr').textContent = e.message; return; }
+  if (!benchmarks.length) {
+    $('launchErr').textContent = 'No splits found. Run: python data\\build_splits.py';
+    $('launchBtn').disabled = true;
+    return;
+  }
+  const groups = {};
+  benchmarks.forEach(b => (groups[b.group] ||= []).push(b));
+  $('benchSelect').innerHTML = Object.entries(groups).map(([g, bs]) =>
+    `<optgroup label="${escapeHtml(GROUP_LABELS[g] || g)}">${bs.map(b =>
+      `<option value="${escapeHtml(b.name)}">${escapeHtml(BENCH_LABELS[b.name] || b.name)}</option>`).join('')}</optgroup>`).join('');
+  onBenchChange();
+}
+
+function onBenchChange() {
+  const b = benchmarks.find(x => x.name === $('benchSelect').value);
+  if (!b) return;
+  const order = ['test', 'dev', 'calib', 'probe_train'];
+  const splits = Object.keys(b.splits).sort((a, c) => order.indexOf(a) - order.indexOf(c));
+  $('splitSelect').innerHTML = splits.map(s => `<option value="${s}">${s} (${b.splits[s].toLocaleString()})</option>`).join('');
+  onSplitChange();
+}
+
+function onSplitChange() {
+  const b = benchmarks.find(x => x.name === $('benchSelect').value);
+  const n = b ? b.splits[$('splitSelect').value] : null;
+  $('benchSize').placeholder = n ? `all (${n.toLocaleString()})` : 'all';
+  $('benchSize').max = n || '';
+}
+
+async function launchBenchmark() {
+  $('launchErr').textContent = '';
+  const n = parseInt($('benchSize').value, 10);
+  const body = { benchmark: $('benchSelect').value, split: $('splitSelect').value, baseline: $('baselineSelect').value };
+  if (!isNaN(n)) body.n = n;
+  $('launchBtn').disabled = true;
+  try {
+    const run = await api('/v1/eval', { method: 'POST', body: JSON.stringify(body) });
+    flash(`Run #${run.id} queued`);
+    await refreshJobs();
+  } catch (e) {
+    $('launchErr').textContent = e.message;
+  } finally {
+    $('launchBtn').disabled = false;
+  }
+}
+
+function statusBadge(st) {
+  const cls = { done: 'badge-fast', running: 'badge-accent', queued: 'badge-muted', failed: 'badge-danger' }[st] || 'badge-muted';
+  return `<span class="badge ${cls}">${escapeHtml(st.toUpperCase())}</span>`;
+}
+
+function summaryGrid(s, n) {
+  const cells = [
+    ['Accuracy', fmt.pct(s.accuracy)],
+    ['Fast-only accuracy', fmt.pct(s.fast_only_accuracy)],
+    ['Escalation rate', fmt.pct(s.escalation_rate)],
+    ['GPU-s / query', fmt.num(s.gpu_seconds_used / (s.total_requests || n), 3)],
+    ['GPU-s saved (est.)', fmt.num(s.gpu_seconds_saved_est, 1)],
+    ['Tokens / query', fmt.int(s.tokens_per_request)],
+    ['p95 latency', fmt.ms(s.p95_latency_ms)],
+    ['AUROC conflict', fmt.num(s.auroc_conflict, 3)],
+    ['AUROC log-prob', fmt.num(s.auroc_logprob_baseline, 3)],
+  ];
+  if (s.fast_lure_rate != null) cells.push(['Fast lure rate', fmt.pct(s.fast_lure_rate)]);
+  return `<div class="kv mt-3">${cells.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>`;
+}
+
+let lastRuns = [];
+async function refreshJobs() {
+  let runs;
+  try { runs = await api('/v1/eval?limit=25'); } catch (e) { $('jobList').innerHTML = `<div class="err">${escapeHtml(e.message)}</div>`; return; }
+  lastRuns = runs;
+  $('jobList').innerHTML = runs.length ? runs.map(r => {
+    const s = r.summary || {};
+    const label = BENCH_LABELS[r.benchmark] || r.benchmark;
+    const base = { manobuddhi: 'ManoBuddhi', always_fast: 'always fast', always_slow: 'always slow' }[r.baseline] || r.baseline;
+    return `<div class="panel-2 p-3" id="run-${r.id}">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs text-[var(--muted)] num">#${r.id}</span>
+          <span class="font-semibold text-sm">${escapeHtml(label)}</span>
+          <span class="text-xs text-[var(--muted)]">${escapeHtml(r.split)} · n=${r.n_items.toLocaleString()} · ${escapeHtml(base)}</span>
+          ${s.simulated ? '<span class="badge badge-muted">SIMULATED</span>' : ''}
+        </div>
+        <div class="flex items-center gap-2">
+          ${r.status === 'done' ? `<a class="btn btn-ghost text-xs" href="/v1/eval/${r.id}/results.csv">CSV</a>` : ''}
+          ${statusBadge(r.status)}
+        </div>
+      </div>
+      ${r.status === 'running' || r.status === 'queued' ? `<div class="bar mt-3"><div class="bar-fill" style="width:${(r.progress * 100).toFixed(1)}%"></div></div>
+        <div class="text-xs text-[var(--muted)] mt-1 num">${Math.round(r.progress * r.n_items)} / ${r.n_items}</div>` : ''}
+      ${r.status === 'done' ? summaryGrid(s, r.n_items) : ''}
+      ${r.status === 'failed' ? `<div class="err mt-2">${escapeHtml(s.error || 'failed')}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="text-xs text-[var(--muted)] text-center py-6">No runs yet</div>';
+  renderBenchmarkChart(runs);
+  const active = runs.some(r => r.status === 'queued' || r.status === 'running');
+  if (active && !state.pollingJobs) {
+    state.pollingJobs = true;
+    setTimeout(() => { state.pollingJobs = false; if (state.screen === 'benchmark') refreshJobs(); }, 1000);
+  }
+}
+
+function renderBenchmarkChart(runs) {
+  const colors = { manobuddhi: '#8b5cf6', always_fast: '#10b981', always_slow: '#f59e0b' };
+  const names = { manobuddhi: 'ManoBuddhi', always_fast: 'Always fast', always_slow: 'Always slow' };
+  const done = runs.filter(r => r.status === 'done' && r.summary && r.summary.accuracy != null);
+  const datasets = Object.keys(colors).map(b => ({
+    label: names[b], backgroundColor: colors[b], borderColor: colors[b], pointRadius: 6,
+    data: done.filter(r => r.baseline === b).map(r => ({
+      x: r.summary.gpu_seconds_used / r.summary.total_requests, y: r.summary.accuracy * 100,
+      label: `#${r.id} ${r.benchmark}/${r.split}`,
+    })),
+  }));
+  makeChart('acc', 'accChart', {
+    type: 'scatter', data: { datasets },
+    options: chartOpts(false, {
+      plugins: {
+        legend: { labels: { color: '#9ca3af' } },
+        tooltip: { callbacks: { label: c => `${c.raw.label}: ${c.raw.y.toFixed(1)}% @ ${c.raw.x.toFixed(3)} GPU-s` } },
+      },
+      scales: {
+        x: { title: { display: true, text: 'GPU-seconds per query', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,.04)' }, beginAtZero: true },
+        y: { title: { display: true, text: 'Accuracy (%)', color: '#9ca3af' }, ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255,255,255,.04)' }, min: 0, max: 100 },
+      },
+    }),
+  });
+}
+
+/* ---------- Savings Dashboard ---------- */
+async function renderDashboard() {
+  const src = $('dashSource').value;
+  const q = src ? `?source=${encodeURIComponent(src)}` : '';
+  let m, reqs;
+  try {
+    [m, reqs] = await Promise.all([api('/v1/metrics' + q), api(`/v1/requests?limit=30${src ? '&source=' + encodeURIComponent(src) : ''}`)]);
+  } catch (e) { $('recentTable').innerHTML = `<tr><td colspan="6" class="err py-3">${escapeHtml(e.message)}</td></tr>`; return; }
+
+  const empty = !m.total_requests;
+  $('statGpu').textContent = empty ? '—' : fmt.num(m.gpu_seconds_saved_est, 1);
+  $('statGpuDelta').textContent = empty || m.gpu_seconds_always_slow_est == null ? 'vs. always-slow estimate'
+    : `${fmt.num(m.gpu_seconds_used, 1)} used vs ${fmt.num(m.gpu_seconds_always_slow_est, 1)} always-slow`;
+  $('statEsc').textContent = empty ? '—' : fmt.pct(m.escalation_rate);
+  $('statEscDelta').textContent = empty ? 'of queries routed slow' : `${fmt.int(m.escalated_requests)} of ${fmt.int(m.total_requests)} routed slow`;
+  $('statP95').textContent = empty ? '—' : fmt.ms(m.p95_latency_ms);
+  $('statP95Delta').textContent = empty ? 'p50 —' : `p50 ${fmt.ms(m.p50_latency_ms)}`;
+  $('statTok').textContent = empty ? '—' : fmt.int(m.tokens_per_request);
+  $('statTokDelta').textContent = `${fmt.int(m.total_requests)} queries`;
+
+  const recent = [...reqs].reverse();
+  makeChart('routing', 'routingChart', {
+    type: 'bar',
+    data: {
+      labels: recent.map(r => '#' + r.id),
+      datasets: [
+        { label: 'Fast', data: recent.map(r => r.route === 'fast' ? 1 : 0), backgroundColor: 'rgba(16,185,129,.6)', stack: 'a' },
+        { label: 'Escalated', data: recent.map(r => r.route === 'escalated' ? 1 : 0), backgroundColor: 'rgba(245,158,11,.6)', stack: 'a' },
+      ],
+    },
+    options: chartOpts(true, { scales: { x: { stacked: true, ticks: { display: false }, grid: { display: false } }, y: { stacked: true, display: false, max: 1 } } }),
+  });
+
+  const h = m.latency_histogram || { bins_ms: [0, 100, 200, 500, 1000, 2000, 5000], counts: [0, 0, 0, 0, 0, 0] };
+  makeChart('latency', 'latencyChart', {
+    type: 'bar',
+    data: {
+      labels: h.bins_ms.slice(0, -1).map((b, i) => i === h.counts.length - 1 ? `${b}+` : `${b}–${h.bins_ms[i + 1]}`),
+      datasets: [{ label: 'Queries', data: h.counts, backgroundColor: 'rgba(139,92,246,.6)' }],
+    },
+    options: chartOpts(false),
+  });
+
+  $('recentTable').innerHTML = reqs.slice(0, 15).map(r => `
+    <tr class="border-b border-[var(--border)]">
+      <td class="py-2 pr-3 max-w-xs truncate" title="${escapeHtml(r.query)}">${escapeHtml(r.query)}</td>
+      <td class="py-2 pr-3">${routeBadge(r.route)}</td>
+      <td class="py-2 pr-3 num">${fmt.num(r.conflict_score)} / ${fmt.num(r.threshold)}</td>
+      <td class="py-2 pr-3 num">${fmt.ms(r.latency_ms)}</td>
+      <td class="py-2 pr-3 num">${fmt.int(r.tokens)}</td>
+      <td class="py-2">${r.correct == null ? '<span class="text-[var(--muted)]">—</span>' : r.correct ? '<span class="text-[var(--fast)]">✓</span>' : '<span class="text-[var(--danger)]">✗</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="py-4 text-center text-xs text-[var(--muted)]">No queries yet</td></tr>';
+}
+
+/* ---------- Settings ---------- */
+function fillSettings(s) {
+  $('cfgMode').value = s.mode;
+  $('cfgFast').value = s.fast_model;
+  $('cfgSlow').value = s.slow_model;
+  $('cfgThreshMode').value = s.threshold_mode;
+  $('cfgThresh').value = s.fixed_threshold;
+  $('cfgBudget').value = s.default_latency_budget_ms;
+  $('budgetVal').textContent = s.default_latency_budget_ms + ' ms';
+  $('cfgProbe').checked = s.probe_enabled;
+  $('cfgDisagree').checked = s.disagreement_enabled;
+  $('cfgK').value = s.k_fast_samples;
+  $('cfgLayer').value = s.probe_layer;
+  $('cfgReuseKv').checked = s.reuse_kv_prefix;
+  $('cfgReuseDraft').checked = s.reuse_spec_draft;
+}
+
+function applyModelLabels(s) {
+  if (s.mode === 'single_model_nothink_think') {
+    $('fastModelLabel').textContent = s.slow_model + ' (no-think)';
+    $('slowModelLabel').textContent = s.slow_model + ' (think)';
+  } else {
+    $('fastModelLabel').textContent = s.fast_model;
+    $('slowModelLabel').textContent = s.slow_model;
+  }
+}
+
+async function loadSettings() {
+  $('settingsErr').textContent = '';
+  try {
+    const [s, sys] = await Promise.all([api('/v1/settings'), api('/v1/system').catch(() => null)]);
+    state.settings = s;
+    fillSettings(s);
+    applyModelLabels(s);
+    if (sys) {
+      const cells = [
+        ['Router backend', sys.router_backend], ['Job executor', sys.eval_executor],
+        ['PostgreSQL', sys.postgres.ok ? 'connected' : 'down'], ['Redis', sys.redis.ok ? 'connected' : 'down'],
+        ['Workers', sys.redis.ok ? sys.redis.workers : '—'], ['Splits', sys.splits_ready ? 'ready' : 'missing'],
       ];
-      for (const [k, v] of rows) {
-        const div = document.createElement('div');
-        div.innerHTML = `<b>${k}</b>: ${v}`;
-        kv.appendChild(div);
-      }
-      asst.appendChild(kv);
-      chat.appendChild(asst);
-      await refreshMetrics();
+      $('infraKv').innerHTML = cells.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${escapeHtml(v)}</div></div>`).join('');
     }
+  } catch (e) { $('settingsErr').textContent = e.message; }
+}
 
-    function msgEl(kind, text) {
-      const d = document.createElement('div');
-      d.className = 'msg ' + kind;
-      d.textContent = text;
-      return d;
-    }
+function readSettingsForm() {
+  return {
+    mode: $('cfgMode').value,
+    fast_model: $('cfgFast').value.trim(),
+    slow_model: $('cfgSlow').value.trim(),
+    threshold_mode: $('cfgThreshMode').value,
+    fixed_threshold: parseFloat($('cfgThresh').value),
+    default_latency_budget_ms: parseFloat($('cfgBudget').value),
+    probe_enabled: $('cfgProbe').checked,
+    disagreement_enabled: $('cfgDisagree').checked,
+    k_fast_samples: parseInt($('cfgK').value, 10),
+    probe_layer: $('cfgLayer').value,
+    reuse_kv_prefix: $('cfgReuseKv').checked,
+    reuse_spec_draft: $('cfgReuseDraft').checked,
+  };
+}
 
-    send.addEventListener('click', sendMessage);
-    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+async function putSettings(body) {
+  $('settingsErr').textContent = '';
+  $('saveBtn').disabled = true;
+  try {
+    const s = await api('/v1/settings', { method: 'PUT', body: JSON.stringify(body) });
+    state.settings = s;
+    fillSettings(s);
+    applyModelLabels(s);
+    flash('Settings saved');
+  } catch (e) {
+    $('settingsErr').textContent = e.message;
+  } finally {
+    $('saveBtn').disabled = false;
+  }
+}
 
-    async function refreshMetrics() {
-      const m = await api('/v1/metrics');
-      metricsEl.innerHTML = '';
-      const cards = [
-        ['gpu_seconds_saved', m.gpu_seconds_saved.toFixed(3)],
-        ['escalation_rate', (m.escalation_rate * 100).toFixed(1) + '%'],
-        ['p95_latency_ms', m.p95_latency_ms.toFixed(1)],
-        ['total_queries', m.total_queries],
-      ];
-      for (const [k, v] of cards) {
-        const c = document.createElement('div');
-        c.className = 'card';
-        c.innerHTML = `<div class="l">${k.replaceAll('_',' ').replaceAll('_',' ')}</div><div class="v">${v}</div>`;
-        metricsEl.appendChild(c);
-      }
-    }
+function saveSettings() {
+  const body = readSettingsForm();
+  if (!body.probe_enabled && !body.disagreement_enabled) {
+    $('settingsErr').textContent = 'Enable at least one conflict signal.';
+    return;
+  }
+  for (const [k, v] of Object.entries(body)) if (typeof v === 'number' && isNaN(v)) { $('settingsErr').textContent = `${k}: enter a number`; return; }
+  putSettings(body);
+}
 
-    async function refreshSettings() {
-      const s = await api('/v1/settings');
-      settingsEl.innerHTML = '';
-      const pre = document.createElement('pre');
-      pre.id = 'settingsJson';
-      pre.textContent = JSON.stringify(s, null, 2);
-      settingsEl.appendChild(pre);
-      saveSettings.onclick = async () => {
-        const s2 = await api('/v1/settings', { method: 'PUT', body: JSON.stringify({}) });
-        await refreshSettings();
-        return s2;
-      };
-    }
+function resetSettings() { putSettings(DEFAULTS); }
 
-    async function runEval() {
-      const job = await api('/v1/eval', { method: 'POST', body: JSON.stringify({ benchmark: bench.value }) });
-      evalLog.textContent = `job ${job.job_id} started (${job.benchmark})`;
-      for (let i = 0; i < 30; i++) {
-        const st = await api('/v1/eval/' + job.job_id);
-        if (st.status === 'completed') { evalLog.textContent = JSON.stringify(st.results); break; }
-        await new Promise(r => setTimeout(r, 500));
-      }
-    }
+/* ---------- System Status ---------- */
+function card(title, ok, sub, lines) {
+  return `<div class="panel p-4">
+    <div class="flex items-center justify-between mb-2">
+      <div class="font-semibold text-sm">${title}</div>
+      <span class="dot" style="background: ${ok === null ? 'var(--muted)' : ok ? 'var(--fast)' : 'var(--danger)'};"></span>
+    </div>
+    <div class="text-xs text-[var(--muted)]">${sub}</div>
+    <div class="mt-3 text-sm space-y-0.5">${lines.map(([k, v]) => `<div>${k}: <span class="font-semibold num">${escapeHtml(v)}</span></div>`).join('')}</div>
+  </div>`;
+}
 
-    (async () => {
-      await refreshMetrics();
-      await refreshSettings();
-      bench.innerHTML = '';
-      for (const b of ['GSM8K', 'MATH', 'StrategyQA', 'CommonsenseQA', 'CRTrapItems']) {
-        const o = document.createElement('option'); o.value = b; o.textContent = b; bench.appendChild(o);
-      }
-      runEval.addEventListener('click', runEval);
-    })();
-  </script>
+async function renderSystem() {
+  let s;
+  try { s = await api('/v1/system'); }
+  catch (e) {
+    $('sysCards').innerHTML = card('FastAPI gateway', false, 'API unreachable', [['Error', e.message]]);
+    return;
+  }
+  const settings = state.settings || await api('/v1/settings').catch(() => null);
+  const sim = s.router_backend === 'placeholder';
+  $('sysCards').innerHTML = [
+    card('FastAPI gateway', true, '/v1/chat/completions', [['Status', 'up'], ['Job executor', s.eval_executor]]),
+    card('Router', sim ? null : true, sim ? 'Placeholder: simulated answers and scores' : 'Conflict-gated router', [
+      ['Backend', s.router_backend],
+      ['Mode', settings ? (settings.mode === 'small_large' ? 'Config B (small → large)' : 'Config A (no-think → think)') : '—'],
+      ['K samples', settings ? settings.k_fast_samples : '—']]),
+    card('PostgreSQL', s.postgres.ok, 'Request log, runs, settings', s.postgres.ok
+      ? [['Requests logged', fmt.int(s.postgres.requests_rows)]] : [['Error', s.postgres.error]]),
+    card('Redis + RQ', s.redis.ok, 'Benchmark job queue', s.redis.ok
+      ? [['Queued jobs', s.redis.queue_length], ['Workers', s.redis.workers]] : [['Error', s.redis.error]]),
+    card('Data splits', s.splits_ready, 'probe_train / calib / dev / test', [['Status', s.splits_ready ? 'ready' : 'run data\\build_splits.py']]),
+    card('Model serving (vLLM)', null, 'Arrives in F4 (needs GPU)', [['Fast model', settings ? settings.fast_model : '—'], ['Slow model', settings ? settings.slow_model : '—']]),
+  ].join('');
+  if (s.redis.ok && s.eval_executor === 'rq' && s.redis.workers === 0) {
+    $('sysCards').insertAdjacentHTML('afterbegin', `<div class="panel p-4 md:col-span-2 lg:col-span-3 sim-banner text-sm">No RQ worker is running, so benchmark jobs will stay queued. Start it with <span class="kbd">docker compose up -d</span>.</div>`);
+  }
+  try {
+    const reqs = await api('/v1/requests?limit=40');
+    $('sysLog').innerHTML = reqs.map(r => {
+      const t = r.created_at ? new Date(r.created_at).toLocaleTimeString() : '';
+      return `<div class="text-[var(--muted)]">[${escapeHtml(t)}] ${escapeHtml(r.source)} → <span style="color:${r.route === 'escalated' ? 'var(--escalated)' : 'var(--fast)'}">${escapeHtml(r.route)}</span> (conflict=${fmt.num(r.conflict_score)}, θ=${fmt.num(r.threshold)}, ${fmt.ms(r.latency_ms)})</div>`;
+    }).join('') || '<div class="text-[var(--muted)]">No requests yet</div>';
+  } catch { /* ignore */ }
+}
+
+/* ---------- init ---------- */
+(async function init() {
+  refreshStatus();
+  setInterval(refreshStatus, 10000);
+  try {
+    const s = await api('/v1/settings');
+    state.settings = s;
+    applyModelLabels(s);
+  } catch { /* status pill shows the error */ }
+  $('chatInput').focus();
+})();
+</script>
 </body>
 </html>

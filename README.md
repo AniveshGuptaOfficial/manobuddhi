@@ -95,8 +95,8 @@ items = load_split("gsm8k", "test")
 | F0 Foundations | 1 | No | Done |
 | F1 Data layer (splits, DB schema) | 1-2 | No | Done |
 | F2 API gateway + placeholder router | 2-3 | No | Done |
-| F3 Frontend wired to API | 3-4 | No | Next |
-| F4 Model serving + telemetry + baselines | 3-5 | Yes | — |
+| F3 Frontend wired to API | 3-4 | No | Done |
+| F4 Model serving + telemetry + baselines | 3-5 | Yes | Next (needs GPU) |
 | F5 Real router engine | 4-9 | Yes | — |
 | Patent gate (provisional filing) | 10-11 | — | — |
 | F6 Threshold controller + full evaluation | 12-16 | Yes | — |
