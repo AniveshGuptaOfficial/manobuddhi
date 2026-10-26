@@ -226,7 +226,7 @@
 
       <div class="panel p-4">
         <div class="font-semibold text-sm mb-1">Accuracy vs GPU-seconds per query</div>
-        <div class="text-xs text-[var(--muted)] mb-3">Finished runs · up and to the left is better · compare ManoBuddhi with the two baselines on the same benchmark</div>
+        <div class="text-xs text-[var(--muted)] mb-3">Finished runs · up and to the left is better · compare ManoBuddhi with the baselines on the same benchmark · <span id="accChartNote"></span></div>
         <canvas id="accChart" height="120"></canvas>
       </div>
     </section>
@@ -814,12 +814,17 @@ function summaryGrid(s, n) {
     ['Fast-only accuracy', fmt.pct(s.fast_only_accuracy)],
     ['Escalation rate', fmt.pct(s.escalation_rate)],
     ['GPU-s / query', fmt.num(s.gpu_seconds_used / (s.total_requests || n), 3)],
-    ['GPU-s saved (est.)', fmt.num(s.gpu_seconds_saved_est, 1)],
+    s.f4 && s.f4.gpu_seconds_saving_vs_always_slow != null
+      ? ['GPU-s saved vs always-slow', fmt.pct(s.f4.gpu_seconds_saving_vs_always_slow)]
+      : ['GPU-s saved (est., total)', fmt.num(s.gpu_seconds_saved_est, 1)],
     ['Tokens / query', fmt.int(s.tokens_per_request)],
     ['p95 latency', fmt.ms(s.p95_latency_ms)],
     ['AUROC conflict', fmt.num(s.auroc_conflict, 3)],
     ['AUROC log-prob', fmt.num(s.auroc_logprob_baseline, 3)],
   ];
+  if (s.f4 && s.f4.accuracy_delta_vs_always_slow != null)
+    cells.push(['Δ accuracy vs always-slow', (s.f4.accuracy_delta_vs_always_slow >= 0 ? '+' : '') + (100 * s.f4.accuracy_delta_vs_always_slow).toFixed(1) + ' pts']);
+  if (s.f4 && s.f4.energy_j_per_query != null) cells.push(['Energy / query', fmt.num(s.f4.energy_j_per_query, 0) + ' J']);
   if (s.fast_lure_rate != null) cells.push(['Fast lure rate', fmt.pct(s.fast_lure_rate)]);
   return `<div class="kv mt-3">${cells.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>`;
 }
@@ -874,7 +879,12 @@ function renderBenchmarkChart(runs) {
     confidence: '#3b82f6', probe_only: '#ec4899', oracle: '#6b7280' };
   const names = { manobuddhi: 'ManoBuddhi', always_fast: 'Always fast', always_slow: 'Always slow',
     confidence: 'Log-prob cascade', probe_only: 'Probe only', oracle: 'Oracle (reference)' };
-  const done = runs.filter(r => r.status === 'done' && r.summary && r.summary.accuracy != null);
+  let done = runs.filter(r => r.status === 'done' && r.summary && r.summary.accuracy != null);
+  // never plot simulated runs next to measured ones: if any real run exists, show real runs only
+  const anyReal = done.some(r => r.summary.simulated === false);
+  if (anyReal) done = done.filter(r => r.summary.simulated === false);
+  $('accChartNote').textContent = anyReal ? 'Showing measured (REAL) runs only; simulated runs are hidden.'
+    : 'Simulated runs (placeholder router): not research results.';
   const datasets = Object.keys(colors).map(b => ({
     label: names[b], backgroundColor: colors[b], borderColor: colors[b], pointRadius: 6,
     data: done.filter(r => r.baseline === b).map(r => ({
