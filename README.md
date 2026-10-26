@@ -88,6 +88,38 @@ items = load_split("gsm8k", "test")
 | dev | Trap sets only: choose probe layer and K without touching test |
 | test | Reported numbers only |
 
+## F4: GPU runs on Kaggle
+
+Real models run on Kaggle (2x T4, float16), not on the PC. Fast: Qwen2.5-1.5B-Instruct on GPU 0.
+Slow: Qwen2.5-7B-Instruct split across both GPUs (about 15 GB in float16 does not fit one T4).
+
+1. Upload `notebooks/f4_kaggle.ipynb` to Kaggle (keep it **Private**), set GPU T4 x2 and Internet on,
+   add the `GITHUB_TOKEN` secret (read-only, this repo only).
+2. Run with `PROFILE = "smoke"` (about 20 min), then `"checkpoint"` via Save & Run All (Commit), about 6-8 h.
+3. Download `f4_<run>.zip` from Output, unzip into `results\`, then:
+
+```
+python scripts\f4.py report --run r1
+python scripts\import_results.py results\r1
+```
+
+The Benchmark Lab then shows the runs marked REAL (`simulated: false`).
+
+What is measured per call: tokens, TTFT, latency, GPU-seconds (wall time x GPUs holding the model),
+busy GPU-seconds (x utilisation) and energy (NVML counter). The three baselines (always-slow,
+log-prob confidence cascade, probe-only) are computed from paired fast/slow runs on the same items;
+thresholds are chosen on `calib` (lowest escalation within 1 accuracy point of always-slow) and
+reported on `test` with bootstrap 95% CIs. The probe is trained on `probe_train` only, with the
+layer and position picked by 5-fold cross-validation.
+
+| Command | Where | What |
+|---|---|---|
+| `f4.py collect --run r1 --split test --n 500` | GPU | fast + slow answers, telemetry, probe features (resumable) |
+| `f4.py train-probe --run r1` | CPU | probe on gsm8k probe_train |
+| `f4.py score --run r1` | CPU | probe P(wrong) on every other set |
+| `f4.py baselines --run r1` | CPU | baselines.json + table |
+| `import_results.py results\r1` | PC | load into the app database |
+
 ## Build phases
 
 | Phase | Weeks | GPU | Status |
@@ -96,7 +128,7 @@ items = load_split("gsm8k", "test")
 | F1 Data layer (splits, DB schema) | 1-2 | No | Done |
 | F2 API gateway + placeholder router | 2-3 | No | Done |
 | F3 Frontend wired to API | 3-4 | No | Done |
-| F4 Model serving + telemetry + baselines | 3-5 | Yes | Next (needs GPU) |
+| F4 Model serving + telemetry + baselines | 3-5 | Yes | Code ready; runs on Kaggle |
 | F5 Real router engine | 4-9 | Yes | — |
 | Patent gate (provisional filing) | 10-11 | — | — |
 | F6 Threshold controller + full evaluation | 12-16 | Yes | — |

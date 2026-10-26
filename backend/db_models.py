@@ -82,7 +82,7 @@ class PathTelemetry(Base):
     __tablename__ = "path_telemetry"
     id: Mapped[int] = mapped_column(primary_key=True)
     request_id: Mapped[int] = mapped_column(ForeignKey("requests.id", ondelete="CASCADE"), index=True)
-    path: Mapped[str] = mapped_column(String(16))  # fast|fast_sample|slow
+    path: Mapped[str] = mapped_column(String(16))  # fast|fast_sample|probe|slow
     model: Mapped[str] = mapped_column(String(128))
     prompt_tokens: Mapped[int | None] = mapped_column(Integer)
     completion_tokens: Mapped[int | None] = mapped_column(Integer)
@@ -92,6 +92,7 @@ class PathTelemetry(Base):
     gpu_seconds: Mapped[float | None] = mapped_column(Float)
     gpu_util_pct: Mapped[float | None] = mapped_column(Float)
     gpu_mem_mb: Mapped[float | None] = mapped_column(Float)
+    energy_j: Mapped[float | None] = mapped_column(Float)  # NVML energy counter delta (F4)
     queue_depth: Mapped[int | None] = mapped_column(Integer)
     request: Mapped[Request] = relationship(back_populates="paths")
 

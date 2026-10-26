@@ -30,7 +30,7 @@ def save_result(session: Session, res: RouteResult, *, query: str, settings: Rou
     req.paths = [PathTelemetry(path=p.path, model=p.model, prompt_tokens=p.prompt_tokens,
                                completion_tokens=p.completion_tokens, reused_tokens=p.reused_tokens,
                                ttft_ms=p.ttft_ms, latency_ms=p.latency_ms, gpu_seconds=p.gpu_seconds,
-                               gpu_util_pct=p.gpu_util_pct, gpu_mem_mb=p.gpu_mem_mb,
+                               gpu_util_pct=p.gpu_util_pct, gpu_mem_mb=p.gpu_mem_mb, energy_j=p.energy_j,
                                queue_depth=p.queue_depth) for p in res.paths]
     session.add(req)
     if commit:

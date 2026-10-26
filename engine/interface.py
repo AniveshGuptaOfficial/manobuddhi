@@ -43,7 +43,7 @@ class RouteRequest:
 
 @dataclass
 class PathResult:
-    path: str  # fast | fast_sample | slow
+    path: str  # fast | fast_sample | probe | slow
     model: str
     text: str
     prompt_tokens: int = 0
@@ -55,6 +55,7 @@ class PathResult:
     gpu_util_pct: float | None = None
     gpu_mem_mb: float | None = None
     queue_depth: int | None = None
+    energy_j: float | None = None
 
 
 @dataclass

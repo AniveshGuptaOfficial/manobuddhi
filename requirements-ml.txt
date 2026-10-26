@@ -1,8 +1,12 @@
-# Model side (F4 onwards, on the GPU machine). Install torch for your CUDA version first:
-#   https://pytorch.org/get-started/locally/
+# Model side (F4 onwards, on the GPU machine: Kaggle 2x T4). Kaggle already has torch.
+# Elsewhere, install torch for your CUDA version first: https://pytorch.org/get-started/locally/
 torch>=2.3
-transformers>=4.45
-accelerate>=0.30
-scikit-learn>=1.4
-# vLLM runs on Linux (or WSL2) with an NVIDIA GPU:
+transformers>=4.51,<5    # 4.51+ for Qwen3 (Config A)
+accelerate>=0.30         # splits the 7B model across both T4s
+nvidia-ml-py>=12.535     # NVML: GPU utilisation and energy (import name: pynvml)
+scikit-learn>=1.4        # probe training
+numpy>=1.24
+# Optional: --slow-quant 4bit puts the 7B model on one GPU
+# bitsandbytes>=0.43
+# vLLM (live serving, F5+) runs on Linux with an NVIDIA GPU:
 # vllm>=0.6

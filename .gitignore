@@ -12,6 +12,8 @@ venv/
 # Data and model artifacts (large; rebuilt by scripts)
 data/raw/
 artifacts/
+# GPU run outputs (Kaggle zips unpacked here); keep the zips somewhere safe
+results/
 *.pt
 *.safetensors
 *.npy

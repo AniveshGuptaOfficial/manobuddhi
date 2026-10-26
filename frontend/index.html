@@ -145,7 +145,7 @@
       </header>
 
       <div id="simBanner" class="sim-banner text-xs px-6 py-2 hidden">
-        Placeholder router: answers and scores are simulated until the real models are connected (F4–F5). Do not report these numbers.
+        Placeholder router: Playground answers and scores are simulated until the real router is connected (F5). Do not report these numbers. Benchmark runs imported from GPU runs are marked REAL.
       </div>
 
       <div id="chatMessages" class="flex-1 overflow-y-auto scroll-thin px-6 py-6 space-y-4">
@@ -832,7 +832,7 @@ async function refreshJobs() {
   $('jobList').innerHTML = runs.length ? runs.map(r => {
     const s = r.summary || {};
     const label = BENCH_LABELS[r.benchmark] || r.benchmark;
-    const base = { manobuddhi: 'ManoBuddhi', always_fast: 'always fast', always_slow: 'always slow' }[r.baseline] || r.baseline;
+    const base = BASELINE_NAMES[r.baseline] || r.baseline;
     return `<div class="panel-2 p-3" id="run-${r.id}">
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <div class="flex items-center gap-2 flex-wrap">
@@ -840,6 +840,8 @@ async function refreshJobs() {
           <span class="font-semibold text-sm">${escapeHtml(label)}</span>
           <span class="text-xs text-[var(--muted)]">${escapeHtml(r.split)} · n=${r.n_items.toLocaleString()} · ${escapeHtml(base)}</span>
           ${s.simulated ? '<span class="badge badge-muted">SIMULATED</span>' : ''}
+          ${s.simulated === false ? `<span class="badge badge-fast" title="Measured on ${escapeHtml(hwLabel(r))}">REAL · ${escapeHtml(s.imported_from || 'measured')}</span>` : ''}
+          ${s.reference_only ? '<span class="badge badge-muted" title="Reference point, not a baseline">REFERENCE</span>' : ''}
         </div>
         <div class="flex items-center gap-2">
           ${r.status === 'done' ? `<a class="btn btn-ghost text-xs" href="/v1/eval/${r.id}/results.csv">CSV</a>` : ''}
@@ -860,17 +862,26 @@ async function refreshJobs() {
   }
 }
 
+const BASELINE_NAMES = { manobuddhi: 'ManoBuddhi', always_fast: 'always fast', always_slow: 'always slow',
+  confidence: 'log-prob cascade', probe_only: 'probe only', oracle: 'oracle (reference)' };
+function hwLabel(r) {
+  const g = ((r.router_config || {}).hardware || {}).gpus || [];
+  return g.length ? `${g.length}x ${g[0].name}` : 'GPU';
+}
+
 function renderBenchmarkChart(runs) {
-  const colors = { manobuddhi: '#8b5cf6', always_fast: '#10b981', always_slow: '#f59e0b' };
-  const names = { manobuddhi: 'ManoBuddhi', always_fast: 'Always fast', always_slow: 'Always slow' };
+  const colors = { manobuddhi: '#8b5cf6', always_fast: '#10b981', always_slow: '#f59e0b',
+    confidence: '#3b82f6', probe_only: '#ec4899', oracle: '#6b7280' };
+  const names = { manobuddhi: 'ManoBuddhi', always_fast: 'Always fast', always_slow: 'Always slow',
+    confidence: 'Log-prob cascade', probe_only: 'Probe only', oracle: 'Oracle (reference)' };
   const done = runs.filter(r => r.status === 'done' && r.summary && r.summary.accuracy != null);
   const datasets = Object.keys(colors).map(b => ({
     label: names[b], backgroundColor: colors[b], borderColor: colors[b], pointRadius: 6,
     data: done.filter(r => r.baseline === b).map(r => ({
       x: r.summary.gpu_seconds_used / r.summary.total_requests, y: r.summary.accuracy * 100,
-      label: `#${r.id} ${r.benchmark}/${r.split}`,
+      label: `#${r.id} ${r.benchmark}/${r.split}${r.summary.simulated === false ? ' (real)' : ' (simulated)'}`,
     })),
-  }));
+  })).filter(d => d.data.length);
   makeChart('acc', 'accChart', {
     type: 'scatter', data: { datasets },
     options: chartOpts(false, {
