@@ -1,0 +1,38 @@
+# F0 infrastructure: PostgreSQL (query log, runs) + Redis (RQ job queue).
+# Ports bind to localhost only, so nothing is exposed before the patent filing.
+services:
+  postgres:
+    image: postgres:16
+    container_name: manobuddhi-postgres
+    environment:
+      POSTGRES_USER: ${MB_PG_USER:-manobuddhi}
+      POSTGRES_PASSWORD: ${MB_PG_PASSWORD:-manobuddhi}
+      POSTGRES_DB: ${MB_PG_DB:-manobuddhi}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MB_PG_USER:-manobuddhi} -d ${MB_PG_DB:-manobuddhi}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: manobuddhi-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:

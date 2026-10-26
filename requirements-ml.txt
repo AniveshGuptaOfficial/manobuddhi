@@ -1,0 +1,8 @@
+# Model side (F4 onwards, on the GPU machine). Install torch for your CUDA version first:
+#   https://pytorch.org/get-started/locally/
+torch>=2.3
+transformers>=4.45
+accelerate>=0.30
+scikit-learn>=1.4
+# vLLM runs on Linux (or WSL2) with an NVIDIA GPU:
+# vllm>=0.6

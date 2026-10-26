@@ -1,0 +1,18 @@
+[project]
+name = "manobuddhi"
+version = "0.1.0"
+description = "ManoBuddhi: dual-process (heuristic-analytic) LLM inference router"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["data/raw"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]

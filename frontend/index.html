@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ManoBuddhi — Dual-Process LLM Inference Router</title>
+  <style>
+    :root { --bg:#0b0f14; --panel:#11161d; --border:#1f2933; --text:#e6edf3; --muted:#8b98a5; --accent:#4f8cff; --fast:#2fbf71; --escalate:#f2a93b; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:14px 20px; border-bottom:1px solid var(--border); background:var(--panel); display:flex; align-items:center; gap:10px; }
+    header h1 { font-size:18px; margin:0; }
+    header .tag { color:var(--muted); font-size:12px; }
+    main { display:grid; grid-template-columns: 1fr 340px; gap:16px; padding:16px; max-width:1400px; margin:0 auto; }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+    section { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; }
+    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 10px; }
+    #chat { display:flex; flex-direction:column; gap:10px; height: 55vh; overflow:auto; }
+    .msg { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#0d1218; }
+    .msg.user { align-self:flex-end; max-width:85%; background:#12202f; border-color:#1c3a55; }
+    .msg.assistant { align-self:flex-start; max-width:95%; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+    .badge.fast { background:rgba(47,191,113,.15); color:var(--fast); border:1px solid rgba(47,191,113,.4); }
+    .badge.escalate { background:rgba(242,169,59,.15); color:var(--escalate); border:1px solid rgba(242,169,59,.4); }
+    .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px; color:var(--muted); margin-top:6px; }
+    .kv b { color:var(--text); font-weight:600; }
+    #composer { display:flex; gap:8px; margin-top:10px; }
+    #composer input { flex:1; background:#0d1218; border:1px solid var(--border); border-radius:8px; padding:10px; color:var(--text); font-size:14px; }
+    button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
+    button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .card { background:#0d1218; border:1px solid var(--border); border-radius:10px; padding:10px; }
+    .card .v { font-size:20px; font-weight:700; margin-top:4px; }
+    .card .l { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    #log { font-size:12px; color:var(--muted); white-space:pre-wrap; max-height:220px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ManoBuddhi</h1>
+    <span class="tag">Dual-Process LLM Inference Router</span>
+  </header>
+  <main>
+    <section>
+      <h2>Playground</h2>
+      <div id="chat"></div>
+      <div id="composer">
+        <input id="q" placeholder="Type a query and press Enter..." autocomplete="off" />
+        <button id="send">Send</button>
+      </div>
+    </section>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <section>
+        <h2>Live Metrics</h2>
+        <div class="cards" id="metrics"></div>
+      </section>
+      <section>
+        <h2>Settings</h2>
+        <div id="settings"></div>
+        <button id="saveSettings" class="ghost">Save Settings</button>
+      </section>
+      <section>
+        <h2>Eval</h2>
+        <div style="display:flex;gap:8px;">
+          <select id="bench"></select>
+          <button id="runEval">Run</button>
+        </div>
+        <div id="evalLog" style="margin-top:8px;"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const metricsEl = document.getElementById('metrics');
+    const settingsEl = document.getElementById('settings');
+    const evalLog = document.getElementById('evalLog');
+    const bench = document.getElementById('bench');
+    const send = document.getElementById('send');
+    const saveSettings = document.getElementById('saveSettings');
+    const runEval = document.getElementById('runEval');
+    const q = document.getElementById('q');
+
+    const api = async (path, opts = {}) => {
+      const res = await fetch(path, {
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+      return res.json();
+    };
+
+    async function sendMessage() {
+      const query = q.value.trim();
+      if (!query) return;
+      const userMsg = { role: 'user', content: query };
+      chat.appendChild(msgEl('user', query));
+      q.value = '';
+      const asst = msgEl('assistant', '...');
+      chat.appendChild(asst);
+      const data = await api('/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      });
+      asst.innerHTML = '';
+      asst.appendChild(document.createTextNode(data.content || ''));
+      const badge = document.createElement('span');
+      badge.className = 'badge ' + data.route;
+      badge.textContent = data.route.toUpperCase();
+      asst.appendChild(document.createElement('br'));
+      asst.appendChild(badge);
+      const kv = document.createElement('div');
+      kv.className = 'kv';
+      const rows = [
+        ['route', data.route],
+        ['conflict_score', data.conflict_score],
+        ['probe_score', data.probe_score],
+        ['threshold', data.threshold],
+        ['escalation_source', data.escalation_source],
+        ['mode', data.mode],
+        ['tokens_generated', data.tokens_generated],
+        ['latency_ms', data.latency_ms],
+      ];
+      for (const [k, v] of rows) {
+        const div = document.createElement('div');
+        div.innerHTML = `<b>${k}</b>: ${v}`;
+        kv.appendChild(div);
+      }
+      asst.appendChild(kv);
+      chat.appendChild(asst);
+      await refreshMetrics();
+    }
+
+    function msgEl(kind, text) {
+      const d = document.createElement('div');
+      d.className = 'msg ' + kind;
+      d.textContent = text;
+      return d;
+    }
+
+    send.addEventListener('click', sendMessage);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    async function refreshMetrics() {
+      const m = await api('/v1/metrics');
+      metricsEl.innerHTML = '';
+      const cards = [
+        ['gpu_seconds_saved', m.gpu_seconds_saved.toFixed(3)],
+        ['escalation_rate', (m.escalation_rate * 100).toFixed(1) + '%'],
+        ['p95_latency_ms', m.p95_latency_ms.toFixed(1)],
+        ['total_queries', m.total_queries],
+      ];
+      for (const [k, v] of cards) {
+        const c = document.createElement('div');
+        c.className = 'card';
+        c.innerHTML = `<div class="l">${k.replaceAll('_',' ').replaceAll('_',' ')}</div><div class="v">${v}</div>`;
+        metricsEl.appendChild(c);
+      }
+    }
+
+    async function refreshSettings() {
+      const s = await api('/v1/settings');
+      settingsEl.innerHTML = '';
+      const pre = document.createElement('pre');
+      pre.id = 'settingsJson';
+      pre.textContent = JSON.stringify(s, null, 2);
+      settingsEl.appendChild(pre);
+      saveSettings.onclick = async () => {
+        const s2 = await api('/v1/settings', { method: 'PUT', body: JSON.stringify({}) });
+        await refreshSettings();
+        return s2;
+      };
+    }
+
+    async function runEval() {
+      const job = await api('/v1/eval', { method: 'POST', body: JSON.stringify({ benchmark: bench.value }) });
+      evalLog.textContent = `job ${job.job_id} started (${job.benchmark})`;
+      for (let i = 0; i < 30; i++) {
+        const st = await api('/v1/eval/' + job.job_id);
+        if (st.status === 'completed') { evalLog.textContent = JSON.stringify(st.results); break; }
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+
+    (async () => {
+      await refreshMetrics();
+      await refreshSettings();
+      bench.innerHTML = '';
+      for (const b of ['GSM8K', 'MATH', 'StrategyQA', 'CommonsenseQA', 'CRTrapItems']) {
+        const o = document.createElement('option'); o.value = b; o.textContent = b; bench.appendChild(o);
+      }
+      runEval.addEventListener('click', runEval);
+    })();
+  </script>
+</body>
+</html>

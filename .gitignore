@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Data and model artifacts (large; rebuilt by scripts)
+data/raw/
+artifacts/
+*.pt
+*.safetensors
+*.npy
+
+# Frontend (from F3 if Next.js)
+node_modules/
+.next/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
