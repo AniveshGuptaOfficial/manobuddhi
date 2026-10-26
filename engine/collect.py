@@ -83,6 +83,19 @@ def environment(meter) -> dict:
             "hardware": meter.hardware(), "platform": platform.platform()}
 
 
+def warmup(pair: ModelPair, log=print) -> None:
+    """One untimed call per model before any measurement: the first CUDA call pays one-off
+    kernel loading / allocation (seen as ~1.3 s TTFT on T4), which is not model cost."""
+    if getattr(pair, "_warm", False):
+        return
+    for m, thinking in ((pair.fast, pair.fast_thinking), (pair.slow, pair.slow_thinking)):
+        if m is not None:
+            m.generate(["What is 2 + 3?"], max_new_tokens=8, thinking=thinking)
+            m.probe_features(*m.generate(["Hi"], max_new_tokens=2, thinking=thinking)[0][1:], [1])
+    pair._warm = True
+    log("warm-up done (not recorded)")
+
+
 def _record(item: dict, prompt: str, fast=None, slow=None, probe_cost=None) -> dict:
     r = {"id": item["id"], "benchmark": item["benchmark"], "split": item.get("split"),
          "item": {k: item[k] for k in ("question", "gold", "answer_type", "aliases", "choices", "meta")
@@ -126,6 +139,8 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
             "batch_size": batch_size, "timed": batch_size == 1}
     log(f"[{key(benchmark, split)}] {len(done)} done, {len(todo)} to go "
         f"(paths={','.join(paths)}, batch={batch_size}, layers={layers})")
+    if todo:
+        warmup(pair, log)
     t_start, n_new = time.time(), 0
 
     for s in range(0, len(todo), shard_size):
