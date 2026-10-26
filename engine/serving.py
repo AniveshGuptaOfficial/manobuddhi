@@ -31,6 +31,9 @@ from .telemetry import GpuMeter
 
 _ANSWER_RE = re.compile(r"answer\s*[:：]", re.IGNORECASE)
 _THINK_END = "</think>"
+# Qwen3's documented way to end thinking early: the model then answers from what it has so far
+FORCE_CLOSE = ("\n\nConsidering the limited time by the user, I have to give the solution based on "
+               "the thinking directly now.\n</think>\n\n")
 
 
 @dataclass
@@ -263,7 +266,7 @@ class HFModel:
                 logits_processor=procs, streamer=timer, stopping_criteria=stops, **dec)
         forced = False
         if budget and crit.closed_at is None and int(out[0, -1]) not in self.eos_ids:
-            close = self.tok("\n" + _THINK_END + "\n\n", return_tensors="pt",
+            close = self.tok(FORCE_CLOSE, return_tensors="pt",
                              add_special_tokens=False)["input_ids"].to(out.device)
             ids2 = torch.cat([out, close], dim=1)
             with self.meter.measure(self.devices) as m2:

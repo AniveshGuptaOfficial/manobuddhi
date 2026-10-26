@@ -122,7 +122,7 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
             paths: tuple[str, ...] = ("fast", "slow"), hidden: bool = True,
             layers: list[int] | None = None, batch_size: int = 1, max_new_fast: int = 512,
             max_new_slow: int = 768, shard_size: int = 25, shard: tuple[int, int] | None = None,
-            log=print) -> dict:
+            deadline: float | None = None, log=print) -> dict:
     if batch_size > 1 and "slow" in paths:
         raise ValueError("batched collection is for fast-only probe_train runs; use batch_size=1")
     items = load_split(benchmark, split)
@@ -158,6 +158,10 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
     t_start, n_new = time.time(), 0
 
     for s in range(0, len(todo), shard_size):
+        if deadline and time.time() > deadline:  # stop cleanly so Kaggle saves output; rerun resumes
+            log(f"  deadline reached: stopping {key(benchmark, split)} at {len(done) + n_new}/{len(items)}")
+            info["stopped_at_deadline"] = True
+            break
         chunk = todo[s:s + shard_size]
         recs, feats = [], []
         prompts = [build_prompt(it) for it in chunk]
@@ -200,5 +204,6 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
         run.update_manifest(collections={key(benchmark, split): info})
 
     info["n_done"] = len(done) + n_new
+    info.setdefault("stopped_at_deadline", False)
     run.update_manifest(collections={key(benchmark, split): info})
     return info

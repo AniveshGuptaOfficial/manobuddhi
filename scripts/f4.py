@@ -55,6 +55,7 @@ def main(argv=None):
     c.add_argument("--max-new-fast", type=int, default=512)
     c.add_argument("--max-new-slow", type=int, default=768,
                    help="slow-path tokens; in thinking mode, the thinking budget (+512 for the answer)")
+    c.add_argument("--deadline", type=float, help="unix time; stop cleanly at the next shard boundary")
     c.add_argument("--shard", help="i/k: take every k-th item starting at i (one process per GPU)")
     c.add_argument("--job", action="append", default=[],
                    help="benchmark:split:n[:paths[:batch]], repeatable; runs several collections "
@@ -106,7 +107,7 @@ def main(argv=None):
             batch = int(j[4]) if len(j) > 4 else (a.batch_size if not a.job else 1)
             collect(run, pair, bench, split, n=n, paths=paths, hidden=not a.no_hidden,
                     batch_size=batch, max_new_fast=a.max_new_fast, max_new_slow=a.max_new_slow,
-                    shard=shard)
+                    shard=shard, deadline=a.deadline, shard_size=25 if batch > 1 else 10)
         print("ALL JOBS DONE", flush=True)
     elif a.cmd == "merge":
         from engine.results import merge_shards
