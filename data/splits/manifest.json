@@ -1,0 +1,178 @@
+{
+  "seed": 42,
+  "calib_n": 500,
+  "benchmarks": {
+    "gsm8k": {
+      "group": "core",
+      "splits": {
+        "probe_train": {
+          "n": 6873,
+          "sha256": "b2ebc9a028436f71c80650d645ad5a27f7fce460c1fb109a318b21bb244bc0f4"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "7f38f14974a7c186d46469943eef8174f6ca799d1e27cea9fa1235c8a0d59763"
+        },
+        "test": {
+          "n": 1319,
+          "sha256": "bf4091c52e1692d7b4ab7d1f7ce0ab4f0a9838c657cdf1e9a31bdde7bd995b37"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "math": {
+      "group": "core",
+      "splits": {
+        "probe_train": {
+          "n": 6997,
+          "sha256": "ff4205fd7068fb7da84bc1df41d8c70a78340e89dacd25081c66ca1aa521df90"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "6fed4b6ffe3a2829aab9f0d4e83c5320becdaee6c1e832ec626b3827494f92be"
+        },
+        "test": {
+          "n": 500,
+          "sha256": "85c84937e64157e71296ad8d26867f54bc130c5c95b4540bb557ec17573452e4"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "strategyqa": {
+      "group": "core",
+      "splits": {
+        "probe_train": {
+          "n": 1102,
+          "sha256": "ed8a9617599152b59a0d83f303ba26afe7ab6d537c10fe610f325e22a0e76cb7"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "d44fa98d3865b46756fdfbc55bd14869b76e6077875c6a5c48aa135e35a629c3"
+        },
+        "test": {
+          "n": 687,
+          "sha256": "696bfdb065497cbec6dadcb6ee45db34d9888144245db1643f9de1a49bf8de53"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "commonsenseqa": {
+      "group": "core",
+      "splits": {
+        "probe_train": {
+          "n": 9240,
+          "sha256": "e8eb70fd65ab7689e34ef77104d82fed6034d0386a8bcea01a32da266f527b97"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "4d007cbdde6fd6a7fb04cd0cb0b952643ca773d4637d2ef7a30ca4fa29b47894"
+        },
+        "test": {
+          "n": 1221,
+          "sha256": "698944f980b10c37ff1a16498bdef652889ef13c0420d99a9fb09141a1c79c3e"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "traps_hagendorff": {
+      "group": "traps",
+      "splits": {
+        "dev": {
+          "n": 60,
+          "sha256": "8b3214672c5987f1ec1a5f7a9340bbc9c7e25ac1d0c29e4da9a58032aa5a69e5"
+        },
+        "test": {
+          "n": 240,
+          "sha256": "99f44bd124347161494270783b56683cb7aea73ff1cbcf6542e2c22a8370ddb9"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "traps_gsm_plus": {
+      "group": "traps",
+      "splits": {
+        "test": {
+          "n": 1319,
+          "sha256": "6b51dadfea6390d82252e42aa18a0040feace7a220cc3778f7d9ffea53a47091"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "traps_gsm_ic": {
+      "group": "traps",
+      "splits": {
+        "test": {
+          "n": 1000,
+          "sha256": "40acd1d51daea9b37cb58f5d06f2eb8b495486e69e9c27b69f65124096296b53"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "popqa": {
+      "group": "rag",
+      "splits": {
+        "probe_train": {
+          "n": 9564,
+          "sha256": "f158ba350f8e4b9038075fc8a9a6a2cf44327f74165b8dcd5350f3bf83532653"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "b10a9e1ed36137efe3e9d86b9840af31fb1f8d25fe3512c2d8927df98d376153"
+        },
+        "test": {
+          "n": 3000,
+          "sha256": "bd4d40feac443777c7efa72bc3b213e3940aecd42f215dd13a78840494531fbe"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "triviaqa": {
+      "group": "rag",
+      "splits": {
+        "probe_train": {
+          "n": 10000,
+          "sha256": "03003b000cb5144f2f31e2bd739999750e8cfb3d5af0b48c590fe817d672a9f9"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "05af54f133752ae37dbb1189e77b1e53c4dbf7505f4545d44452633a7076a7fc"
+        },
+        "test": {
+          "n": 2000,
+          "sha256": "16a9866f0d288f24af26c35ef6d65eb9c076711a9af8d279d746b8f2e948f83b"
+        }
+      },
+      "cross_split_overlap": 0
+    },
+    "nq_open": {
+      "group": "rag",
+      "splits": {
+        "probe_train": {
+          "n": 10000,
+          "sha256": "a3db021f11634ef84d441019e85b1368e41fc058c83800db23f90e6acb9577b7"
+        },
+        "calib": {
+          "n": 500,
+          "sha256": "73d44626f4a82a68baa9a848c47841f9b2219c1b31734618fb4d32644b658108"
+        },
+        "test": {
+          "n": 3610,
+          "sha256": "2384b56453cef54b7e51ce0e5b7835ea9fe75af807640aa4553a868127f93ab9"
+        }
+      },
+      "cross_split_overlap": 0
+    }
+  },
+  "leakage": {
+    "removed_from_training_pools": {
+      "gsm8k": 100,
+      "math": 0,
+      "strategyqa": 1,
+      "commonsenseqa": 0,
+      "popqa": 2,
+      "triviaqa": 19,
+      "nq_open": 0
+    },
+    "train_or_calib_in_any_eval": 0
+  }
+}

@@ -59,7 +59,11 @@ def gsm8k(raw: Path, split: str) -> list[dict]:
 
 def math_train(raw: Path) -> list[dict]:
     out = []
-    for subj_dir in sorted(p for p in (raw / "math").iterdir() if p.is_dir()):
+    subjects = sorted(p for p in (raw / "math").iterdir()
+                      if p.is_dir() and not p.name.startswith(".") and any(p.glob("train*.parquet")))
+    if len(subjects) != 7:
+        raise RuntimeError(f"expected 7 MATH subjects, found {[p.name for p in subjects]}")
+    for subj_dir in subjects:
         for i, r in enumerate(_parquet(_one(subj_dir, "train"))):
             gold = A.last_boxed(r["solution"])
             if gold:

@@ -33,8 +33,8 @@ class Config(BaseSettings):
     default_latency_budget_ms: float = 1500.0
 
     # Infrastructure
-    database_url: str = "postgresql+psycopg://manobuddhi:manobuddhi@localhost:5432/manobuddhi"
-    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = "postgresql+psycopg://manobuddhi:manobuddhi@127.0.0.1:5432/manobuddhi"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     vllm_fast_url: str = "http://localhost:8100/v1"
     vllm_slow_url: str = "http://localhost:8200/v1"
     cors_origins: list[str] = ["http://localhost:8000", "http://127.0.0.1:8000"]
