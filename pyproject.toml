@@ -16,3 +16,4 @@ extend-exclude = ["data/raw"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
+ignore = ["E501"]

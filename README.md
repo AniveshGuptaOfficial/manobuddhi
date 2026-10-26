@@ -21,6 +21,7 @@ engine/    Router engine: probe, conflict score, controller, reuse (F4-F6, GPU)
 frontend/  Web UI
 data/      download_datasets.py, extract_hagendorff.py; raw/ is git-ignored
 scripts/   check_services.py
+migrations/ Alembic database migrations
 tests/     pytest suite
 docker-compose.yml   PostgreSQL + Redis (localhost only)
 ```
@@ -45,15 +46,32 @@ UI: http://localhost:8000 · API docs: http://localhost:8000/docs
 ```cmd
 python data\download_datasets.py
 python data\extract_hagendorff.py
+python data\build_splits.py
+alembic upgrade head
 ```
+
+Splits (seed 42) live in `data/splits/<benchmark>/<split>.jsonl`; `data/splits/manifest.json`
+records counts, SHA-256 hashes and leakage checks. Load them with:
+
+```python
+from engine.data import load_split
+items = load_split("gsm8k", "test")
+```
+
+| Split | Used for |
+|---|---|
+| probe_train | Fast-model runs -> hidden-state probe training data (O1) |
+| calib | Learn-then-test certified set, exactly 500 items (O3) |
+| dev | Trap sets only: choose probe layer and K without touching test |
+| test | Reported numbers only |
 
 ## Build phases
 
 | Phase | Weeks | GPU | Status |
 |---|---|---|---|
 | F0 Foundations | 1 | No | Done |
-| F1 Data layer (splits, DB schema) | 1-2 | No | Next |
-| F2 API gateway + placeholder router | 2-3 | No | Partly scaffolded |
+| F1 Data layer (splits, DB schema) | 1-2 | No | Done |
+| F2 API gateway + placeholder router | 2-3 | No | Next |
 | F3 Frontend wired to API | 3-4 | No | — |
 | F4 Model serving + telemetry + baselines | 3-5 | Yes | — |
 | F5 Real router engine | 4-9 | Yes | — |
