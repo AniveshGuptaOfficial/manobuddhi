@@ -11,6 +11,39 @@ from .probe import LinearProbe, train_probe
 from .results import RunDir, key
 
 
+def regrade(run: RunDir, log=print) -> dict:
+    """Re-grade every saved answer with the current engine/grading.py (no GPU). Run it after a
+    grader fix, then train-probe / score / baselines again: probe labels come from grading."""
+    import os
+
+    from .grading import grade, is_lure
+
+    changed = {}
+    for bench, split in run.collections():
+        recs = run.load_records(bench, split)
+        n = 0
+        for r in recs:
+            for p in ("fast", "slow"):
+                if r.get(p):
+                    new_c, new_l = grade(r["item"], r[p]["text"]), is_lure(r["item"], r[p]["text"])
+                    n += (new_c != r.get(f"{p}_correct"))
+                    r[f"{p}_correct"], r[f"{p}_lure"] = new_c, new_l
+        path = run.records_path(bench, split)
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            for r in recs:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        os.replace(tmp, path)
+        changed[key(bench, split)] = n
+        log(f"regraded {key(bench, split)}: {n} verdicts changed")
+    import hashlib
+    from pathlib import Path
+
+    g = Path(__file__).with_name("grading.py").read_bytes()
+    run.update_manifest(grader_sha256=hashlib.sha256(g).hexdigest()[:16])
+    return changed
+
+
 def train(run: RunDir, benchmark: str = "gsm8k", split: str = "probe_train",
           candidates: list[str] | None = None, log=print) -> dict:
     recs = {r["id"]: r for r in run.load_records(benchmark, split)}

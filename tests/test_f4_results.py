@@ -117,3 +117,37 @@ def test_meter_with_fake_nvml():
     assert r.energy_j == pytest.approx(1.0)  # one read before and after, two GPUs
     assert 50 <= r.gpu_util_pct <= 100
     assert r.gpu_busy_seconds == pytest.approx(r.wall_s * 1.5, rel=0.2)
+
+
+def test_merge_shards_is_idempotent(tmp_path):
+    from engine.results import merge_shards
+
+    recs = records(40, "calib")
+    s0, s1 = RunDir(tmp_path / "a1.s0"), RunDir(tmp_path / "a1.s1")
+    for sh, part in ((s0, recs[0::2]), (s1, recs[1::2])):
+        sh.update_manifest(models={"fast": {"name": "Qwen/Qwen3-4B"}}, probe_layers=[4],
+                           collections={"gsm8k__calib": {"n_target": len(part), "n_done": len(part)}})
+        _fill(sh, "gsm8k", "calib", part, 0, shard=7)
+    dest = RunDir(tmp_path / "a1")
+    merge_shards(dest, [s0, s1], log=lambda *_: None)
+    ids, f = dest.load_features("gsm8k", "calib")
+    assert sorted(ids) == sorted(r["id"] for r in recs) and f["last_L4"].shape == (40, 32)
+    # features stay attached to the right item
+    i = ids.index(recs[5]["id"])
+    _, f1 = s1.load_features("gsm8k", "calib")
+    assert np.array_equal(f["last_L4"][i], f1["last_L4"][[r["id"] for r in recs[1::2]].index(recs[5]["id"])])
+    assert dest.manifest()["collections"]["gsm8k__calib"]["n_done"] == 40
+    assert merge_shards(dest, [s0, s1], log=lambda *_: None) == {}  # nothing new the second time
+    assert len(dest.load_records("gsm8k", "calib")) == 40
+
+
+def test_regrade_fixes_saved_verdicts(tmp_path):
+    run = RunDir(tmp_path / "r")
+    recs = records(4, "test")
+    recs[0]["fast"]["text"] = "so the total is\n\\[\n\\boxed{%s}\n\\]" % recs[0]["item"]["gold"]
+    recs[0]["fast_correct"] = False  # what the old last-line grader said
+    run.append_shard("gsm8k", "test", recs)
+    changed = pipeline.regrade(run, log=lambda *_: None)
+    assert changed == {"gsm8k__test": 1}
+    assert run.load_records("gsm8k", "test")[0]["fast_correct"] is True
+    assert "grader_sha256" in run.manifest()

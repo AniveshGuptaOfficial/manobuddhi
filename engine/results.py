@@ -146,3 +146,46 @@ class RunDir:
 
     def save_baselines(self, data: dict) -> None:
         self.baselines_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def merge_shards(dest: RunDir, shards: list[RunDir], log=print) -> dict:
+    """Combine per-GPU shard runs (results/<run>.s0, .s1, ...) into one run. Idempotent: items
+    already in dest are skipped, so it can be rerun after a resumed collection."""
+    first = next((sh.manifest() for sh in shards if sh.manifest()), None)
+    if not first:
+        raise ValueError("no shard has a manifest yet")
+    models = [sh.manifest().get("models", {}).get("fast", {}).get("name") for sh in shards if sh.manifest()]
+    if len(set(models)) > 1:
+        raise ValueError(f"shards were collected with different models: {models}")
+    counts = {}
+    for sh in shards:
+        for bench, split in sh.collections():
+            have = {r["id"] for r in dest.load_records(bench, split)}
+            recs = [r for r in sh.load_records(bench, split) if r["id"] not in have]
+            if not recs:
+                continue
+            ids, cols = sh.load_features(bench, split)
+            pos = {x: i for i, x in enumerate(ids)}
+            feats = None
+            if cols and all(r["id"] in pos for r in recs):
+                feats = [{k: v[pos[r["id"]]] for k, v in cols.items()} for r in recs]
+            dest.append_shard(bench, split, recs, feats)
+            counts[key(bench, split)] = counts.get(key(bench, split), 0) + len(recs)
+    colls = {}
+    for bench, split in dest.collections():
+        k = key(bench, split)
+        parts = [sh.manifest().get("collections", {}).get(k) for sh in shards]
+        parts = [p for p in parts if p]
+        info = dict(parts[0]) if parts else {}
+        info.update(n_target=sum(p.get("n_target", 0) for p in parts),
+                    n_done=len(dest.load_records(bench, split)), shard=f"merged from {len(parts)} shards")
+        colls[k] = info
+    dest.update_manifest(**{k: first[k] for k in ("models", "environment", "git_commit", "probe_layers",
+                                                   "generation") if k in first},
+                         collections=colls,
+                         parallel={"shards": [sh.path.name for sh in shards],
+                                   "note": "one process per GPU, each with its own model copy; "
+                                           "every item is timed on a single GPU"})
+    log(f"merged into {dest.path.name}: " + ", ".join(f"{k} +{v}" for k, v in counts.items()) if counts
+        else f"merged into {dest.path.name}: nothing new")
+    return counts

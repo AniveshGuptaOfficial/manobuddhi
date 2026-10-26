@@ -15,10 +15,11 @@ def extract_final(text: str, answer_type: str) -> str:
     hits = _ANSWER_LINE.findall(text)
     if hits:
         cand = hits[-1].strip()
-    elif answer_type == "math_expr" and last_boxed(text):
+    elif last_boxed(text):  # e.g. a thinking model ending with $$\boxed{18}$$ and no Answer line
         cand = last_boxed(text)
-    else:
-        cand = text.strip().splitlines()[-1] if text.strip() else ""
+    else:  # last line with real content (skip markup-only lines such as "$$" or "---")
+        lines = [ln for ln in text.strip().splitlines() if re.search(r"[0-9A-Za-z]", ln)]
+        cand = lines[-1] if lines else ""
     if answer_type == "math_expr" and "\\boxed" in cand:
         cand = last_boxed(cand) or cand
     return cand.strip().rstrip(".").strip()

@@ -42,6 +42,9 @@ def test_grading():
     assert grade({"answer_type": "multiple_choice", "gold": "B", "choices": []}, "Answer: B")
     assert grade({"answer_type": "text_aliases", "gold": "Paris", "aliases": ["Paris"]}, "Answer: It's Paris")
     assert grade({"answer_type": "free_text", "gold": "x"}, "y") is None
+    # thinking-model endings without an "Answer:" line (F4 Config A smoke, gsm8k-test-517)
+    assert grade(item, "so 2 x 9 = 5\n\n### Final Answer\n\n$$\n\\boxed{5}\n$$")
+    assert grade(item, "total is 5 apples\n\n---\n$$")
 
 
 def test_stats():

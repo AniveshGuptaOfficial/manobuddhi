@@ -7,6 +7,7 @@ GPU steps (Kaggle):
   python scripts/f4.py collect --run r1 --benchmark traps_hagendorff --split test --paths fast
 
 CPU steps (anywhere):
+  python scripts/f4.py regrade --run r1        (after a grader fix)
   python scripts/f4.py train-probe --run r1
   python scripts/f4.py score --run r1
   python scripts/f4.py baselines --run r1
@@ -52,12 +53,24 @@ def main(argv=None):
     c.add_argument("--slow-max-memory", default="0:4GiB,1:12GiB",
                    help="float16 split across GPUs, e.g. 0:4GiB,1:12GiB")
     c.add_argument("--max-new-fast", type=int, default=512)
-    c.add_argument("--max-new-slow", type=int, default=768)
+    c.add_argument("--max-new-slow", type=int, default=768,
+                   help="slow-path tokens; in thinking mode, the thinking budget (+512 for the answer)")
+    c.add_argument("--shard", help="i/k: take every k-th item starting at i (one process per GPU)")
+    c.add_argument("--job", action="append", default=[],
+                   help="benchmark:split:n[:paths[:batch]], repeatable; runs several collections "
+                        "with the model loaded once (overrides --benchmark/--split/--n)")
+
+    m = sub.add_parser("merge", help="combine per-GPU shard runs into one run (CPU)")
+    m.add_argument("--run", required=True)
+    m.add_argument("--shards", required=True, help="comma-separated shard run names, e.g. a1.s0,a1.s1")
 
     t = sub.add_parser("train-probe", help="train the hidden-state probe on probe_train (CPU)")
     t.add_argument("--run", required=True)
     t.add_argument("--benchmark", default="gsm8k")
     t.add_argument("--split", default="probe_train")
+
+    g = sub.add_parser("regrade", help="re-grade saved answers with the current grader (CPU)")
+    g.add_argument("--run", required=True)
 
     s = sub.add_parser("score", help="apply the probe to all collected sets (CPU)")
     s.add_argument("--run", required=True)
@@ -82,10 +95,25 @@ def main(argv=None):
         pair = load_pair(a.mode, fast_model=a.fast_model, slow_model=a.slow_model,
                          fast_device=a.fast_device, slow_quant=a.slow_quant, slow_device=a.slow_device,
                          slow_max_memory=_mem(a.slow_max_memory),
-                         with_slow="slow" in a.paths.split(","))
-        paths = tuple(a.paths.split(","))
-        collect(run, pair, a.benchmark, a.split, n=a.n, paths=paths, hidden=not a.no_hidden,
-                batch_size=a.batch_size, max_new_fast=a.max_new_fast, max_new_slow=a.max_new_slow)
+                         with_slow=any("slow" in (j.split(":")[3] if len(j.split(":")) > 3 else a.paths)
+                                       for j in a.job) if a.job else "slow" in a.paths.split(","))
+        shard = tuple(int(x) for x in a.shard.split("/")) if a.shard else None
+        jobs = [j.split(":") for j in a.job] or [[a.benchmark, a.split, str(a.n or 0), a.paths,
+                                                    str(a.batch_size)]]
+        for j in jobs:
+            bench, split, n = j[0], j[1], int(j[2]) or None
+            paths = tuple((j[3] if len(j) > 3 else a.paths).split(","))
+            batch = int(j[4]) if len(j) > 4 else (a.batch_size if not a.job else 1)
+            collect(run, pair, bench, split, n=n, paths=paths, hidden=not a.no_hidden,
+                    batch_size=batch, max_new_fast=a.max_new_fast, max_new_slow=a.max_new_slow,
+                    shard=shard)
+        print("ALL JOBS DONE", flush=True)
+    elif a.cmd == "merge":
+        from engine.results import merge_shards
+
+        merge_shards(run, [RunDir(Path(a.results) / x) for x in a.shards.split(",")])
+    elif a.cmd == "regrade":
+        pipeline.regrade(run)
     elif a.cmd == "train-probe":
         pipeline.train(run, a.benchmark, a.split)
     elif a.cmd == "score":

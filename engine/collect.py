@@ -121,11 +121,14 @@ def _record(item: dict, prompt: str, fast=None, slow=None, probe_cost=None) -> d
 def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int | None = None,
             paths: tuple[str, ...] = ("fast", "slow"), hidden: bool = True,
             layers: list[int] | None = None, batch_size: int = 1, max_new_fast: int = 512,
-            max_new_slow: int = 768, shard_size: int = 25, log=print) -> dict:
+            max_new_slow: int = 768, shard_size: int = 25, shard: tuple[int, int] | None = None,
+            log=print) -> dict:
     if batch_size > 1 and "slow" in paths:
         raise ValueError("batched collection is for fast-only probe_train runs; use batch_size=1")
     items = load_split(benchmark, split)
     items = items[:n] if n else items
+    if shard:  # (i, k): this process takes items i, i+k, i+2k, ... (one process per GPU)
+        items = items[shard[0]::shard[1]]
     done = {r["id"] for r in run.load_records(benchmark, split)}
     todo = [it for it in items if it["id"] not in done]
     layers = layers or default_layers(pair.fast.n_layers)
@@ -146,7 +149,8 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
             run.update_manifest(models=pair.describe())
 
     info = {"n_target": len(items), "paths": list(paths), "hidden": hidden,
-            "batch_size": batch_size, "timed": batch_size == 1}
+            "batch_size": batch_size, "timed": batch_size == 1,
+            "shard": f"{shard[0]}/{shard[1]}" if shard else None}
     log(f"[{key(benchmark, split)}] {len(done)} done, {len(todo)} to go "
         f"(paths={','.join(paths)}, batch={batch_size}, layers={layers})")
     if todo:
@@ -177,7 +181,9 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
             if "slow" in paths:
                 slow_gen = pair.slow.generate([prompt], max_new_tokens=max_new_slow,
                                               thinking=pair.slow_thinking, sampling=pair.slow_sampling,
-                                              seed=_seed(it["id"]))[0][0]
+                                              seed=_seed(it["id"]),
+                                              think_budget=max_new_slow if pair.slow_thinking else None
+                                              )[0][0]
             recs.append(_record(it, prompt, fast_gen, slow_gen, probe_cost))
         run.append_shard(benchmark, split, recs, feats if hidden and feats else None)
         n_new += len(recs)
@@ -185,11 +191,11 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
         left = (len(todo) - n_new) * el / n_new
         fa = [r["fast_correct"] for r in recs if r["fast_correct"] is not None]
         sa = [r["slow_correct"] for r in recs if r["slow_correct"] is not None]
-        cut = [r for r in recs if r["slow"] and not r["slow"]["finished"]]
+        cut = [r for r in recs if r["slow"] and (not r["slow"]["finished"] or r["slow"].get("think_forced"))]
         log(f"  {len(done) + n_new}/{len(items)}  {el / n_new:.1f}s/item  ETA {left / 60:.0f} min"
             + (f"  fast acc {sum(fa) / len(fa):.2f}" if fa else "")
             + (f"  slow acc {sum(sa) / len(sa):.2f}" if sa else "")
-            + (f"  slow hit max tokens {len(cut)}/{len(recs)}" if cut else ""))
+            + (f"  slow hit budget {len(cut)}/{len(recs)}" if cut else ""))
         info["n_done"] = len(done) + n_new
         run.update_manifest(collections={key(benchmark, split): info})
 

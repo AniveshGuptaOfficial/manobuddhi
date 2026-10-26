@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field
 
 import torch
 from transformers import (AutoModelForCausalLM, AutoTokenizer, LogitsProcessor,
-                          LogitsProcessorList)
+                          LogitsProcessorList, StoppingCriteria, StoppingCriteriaList)
 from transformers.generation.streamers import BaseStreamer
 
 from .telemetry import GpuMeter
@@ -57,6 +57,7 @@ class Generation:
     thinking: bool | None = None
     reasoning_tokens: int | None = None  # tokens before </think> (Config A think mode)
     sampled: bool = False  # True: sampled decoding (no log-prob confidence)
+    think_forced: bool = False  # thinking hit its budget; </think> was inserted, then the answer generated
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -82,6 +83,38 @@ class _StepLogprobs(LogitsProcessor):
         if self.first_entropy is None:
             self.first_entropy = -(lp.exp() * lp).nan_to_num().sum(dim=-1)
         return scores
+
+
+class _ThinkBudget(StoppingCriteria):
+    """Batch-1 thinking budget: stop when thinking reaches `think_budget` tokens without closing,
+    or when the answer after </think> reaches `answer_budget` tokens."""
+
+    def __init__(self, end_id: int, plen: int, think_budget: int, answer_budget: int):
+        self.end_id, self.plen = end_id, plen
+        self.think_budget, self.answer_budget = think_budget, answer_budget
+        self.closed_at = None
+
+    def __call__(self, input_ids, scores, **kwargs):
+        n = input_ids.shape[1] - self.plen
+        if self.closed_at is None and int(input_ids[0, -1]) == self.end_id:
+            self.closed_at = n
+        stop = (n >= self.think_budget if self.closed_at is None
+                else n - self.closed_at >= self.answer_budget)
+        return torch.full((input_ids.shape[0],), stop, dtype=torch.bool, device=input_ids.device)
+
+
+def _add(m, m2):
+    """Fold a second measured call into the first (forced-close continuation)."""
+    w = m.wall_s + m2.wall_s
+    if m.gpu_util_pct is not None and m2.gpu_util_pct is not None and w > 0:
+        m.gpu_util_pct = (m.gpu_util_pct * m.wall_s + m2.gpu_util_pct * m2.wall_s) / w
+    m.wall_s = w
+    m.gpu_seconds += m2.gpu_seconds
+    m.gpu_busy_seconds += m2.gpu_busy_seconds
+    if m.energy_j is not None and m2.energy_j is not None:
+        m.energy_j += m2.energy_j
+    if m2.gpu_mem_mb is not None:
+        m.gpu_mem_mb = max(m.gpu_mem_mb or 0, m2.gpu_mem_mb)
 
 
 class _FirstTokenTimer(BaseStreamer):
@@ -188,11 +221,17 @@ class HFModel:
     @torch.inference_mode()
     def generate(self, prompts: list[str], *, max_new_tokens: int = 512,
                  thinking: bool | None = None, timed: bool = True, sampling: dict | None = None,
-                 seed: int | None = None) -> list[tuple[Generation, list[int], list[int]]]:
+                 seed: int | None = None, think_budget: int | None = None,
+                 answer_budget: int = 512) -> list[tuple[Generation, list[int], list[int]]]:
         """Greedy generation unless `sampling` is given (e.g. Qwen3 thinking mode, where greedy
         decoding can repeat endlessly). Returns, per prompt, (Generation, prompt_ids,
         completion_ids). timed=True needs a single prompt: batch 1 is what a live query costs.
-        Sampled runs carry no log-prob confidence (only the greedy fast path needs it)."""
+        Sampled runs carry no log-prob confidence (only the greedy fast path needs it).
+
+        think_budget (thinking mode, batch 1): thinking may use at most this many tokens; if it
+        has not closed by then, '</think>' is inserted and the model writes its answer (up to
+        answer_budget tokens). Both calls are measured and counted. Without this, a long
+        reasoning chain that already reached the right answer scores as wrong (F4 smoke)."""
         if timed and len(prompts) != 1:
             raise ValueError("timed generation runs one prompt at a time (batch 1)")
         texts = [self.chat_text(p, thinking) for p in prompts]
@@ -209,13 +248,33 @@ class HFModel:
         else:
             dec = dict(do_sample=False, temperature=None, top_p=None, top_k=None)
             procs = LogitsProcessorList([rec])
+        plen = enc["input_ids"].shape[1]
+        budget = bool(thinking and think_budget and len(prompts) == 1)
+        stops = None
+        if budget:
+            end_id = self.tok.convert_tokens_to_ids(_THINK_END)
+            crit = _ThinkBudget(end_id, plen, think_budget, answer_budget)
+            stops = StoppingCriteriaList([crit])
+            max_new_tokens = think_budget + answer_budget
         with self.meter.measure(self.devices) as m:
             out = self.model.generate(
                 **enc, max_new_tokens=max_new_tokens, repetition_penalty=1.0, num_beams=1,
                 pad_token_id=self.tok.pad_token_id, eos_token_id=self.eos_ids,
-                logits_processor=procs, streamer=timer, **dec)
+                logits_processor=procs, streamer=timer, stopping_criteria=stops, **dec)
+        forced = False
+        if budget and crit.closed_at is None and int(out[0, -1]) not in self.eos_ids:
+            close = self.tok("\n" + _THINK_END + "\n\n", return_tensors="pt",
+                             add_special_tokens=False)["input_ids"].to(out.device)
+            ids2 = torch.cat([out, close], dim=1)
+            with self.meter.measure(self.devices) as m2:
+                out = self.model.generate(
+                    input_ids=ids2, attention_mask=torch.ones_like(ids2),
+                    max_new_tokens=answer_budget, repetition_penalty=1.0, num_beams=1,
+                    pad_token_id=self.tok.pad_token_id, eos_token_id=self.eos_ids,
+                    logits_processor=LogitsProcessorList(), **dec)
+            _add(m, m2)
+            forced = True
         t0_wall = m.wall_s
-        plen = enc["input_ids"].shape[1]
         gen = out[:, plen:].tolist()
         steps = torch.stack(rec.max_lp, dim=0).float().cpu() if rec.max_lp else None  # (T, B)
         ent = rec.first_entropy.float().cpu() if rec.first_entropy is not None else None
@@ -234,7 +293,8 @@ class HFModel:
             visible, _ = split_thinking(raw)
             g = Generation(model=self.name, text=visible, raw_text=raw, prompt_tokens=len(prompt_ids),
                            completion_tokens=n_gen, finished=finished, devices=self.devices,
-                           thinking=thinking, timed=timed, sampled=bool(sampling))
+                           thinking=thinking, timed=timed, sampled=bool(sampling),
+                           think_forced=forced)
             if steps is not None and comp:
                 lps = steps[: len(comp), b].tolist()
                 g.mean_logprob = sum(lps) / len(lps)
