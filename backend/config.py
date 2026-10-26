@@ -32,6 +32,20 @@ class Config(BaseSettings):
     fixed_threshold: float = 0.5
     default_latency_budget_ms: float = 1500.0
 
+    # Conflict signal + fast-path reuse toggles (Settings screen)
+    probe_enabled: bool = True
+    disagreement_enabled: bool = True
+    probe_layer: str = "late"  # late | middle | aggregate
+    reuse_kv_prefix: bool = True  # Config A
+    reuse_spec_draft: bool = True  # Config B
+
+    # Router implementation: "placeholder" until F5
+    router_backend: str = "placeholder"
+
+    # Benchmark jobs: "rq" (Docker worker) or "inline" (inside the API process)
+    eval_executor: str = "rq"
+    eval_queue: str = "manobuddhi-eval"
+
     # Infrastructure
     database_url: str = "postgresql+psycopg://manobuddhi:manobuddhi@127.0.0.1:5432/manobuddhi"
     redis_url: str = "redis://127.0.0.1:6379/0"

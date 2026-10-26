@@ -33,6 +33,24 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # Runs benchmark jobs from the Benchmark Lab (RQ needs Linux, so it lives here).
+  # Source is mounted, so code changes apply after: docker compose restart worker
+  worker:
+    build: .
+    container_name: manobuddhi-worker
+    command: rq worker --url redis://redis:6379/0 --path /app manobuddhi-eval
+    environment:
+      MB_DATABASE_URL: postgresql+psycopg://${MB_PG_USER:-manobuddhi}:${MB_PG_PASSWORD:-manobuddhi}@postgres:5432/${MB_PG_DB:-manobuddhi}
+      MB_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   pgdata:
   redisdata:

@@ -1,56 +1,79 @@
-"""In-memory benchmark job manager for ManoBuddhi evaluation."""
+"""Eval runs: create, dispatch to RQ or inline, list, CSV export."""
+import csv
+import io
+import subprocess
 
-import time
-import uuid
+from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from .models import EvalJobResponse
+from engine.data import manifest
 
-VALID_BENCHMARKS = ["GSM8K", "MATH", "StrategyQA", "CommonsenseQA", "CRTrapItems"]
-
-
-class EvalManager:
-    def __init__(self) -> None:
-        self.jobs: dict[str, EvalJobResponse] = {}
-
-    def create(self, benchmark: str) -> EvalJobResponse:
-        job_id = str(uuid.uuid4())
-        job = EvalJobResponse(job_id=job_id, status="queued", benchmark=benchmark, progress=0.0, results=None)
-        self.jobs[job_id] = job
-        return job
-
-    def get(self, job_id: str) -> EvalJobResponse | None:
-        return self.jobs.get(job_id)
-
-    def start(self, job_id: str) -> None:
-        job = self.jobs.get(job_id)
-        if job is not None:
-            self.jobs[job_id] = job.model_copy(update={"status": "running", "progress": 0.05})
-
-    def complete(self, job_id: str, results: dict) -> None:
-        job = self.jobs.get(job_id)
-        if job is not None:
-            self.jobs[job_id] = job.model_copy(update={"status": "completed", "progress": 1.0, "results": results})
-
-    def status_response(self, job_id: str) -> EvalJobResponse | None:
-        return self.jobs.get(job_id)
+from . import jobs, settings
+from .config import PROJECT_ROOT, config
+from .db_models import EvalRun, Request
+from .models import EvalCreate
 
 
-eval_manager = EvalManager()
+def _git_commit() -> str | None:
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True,
+                              text=True, timeout=3).stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
 
 
-def simulate_benchmark_run(job_id: str, benchmark: str) -> None:
-    """Simulated benchmark execution; replace with real harness calls."""
-    ev = eval_manager
-    ev.start(job_id)
-    time.sleep(0.2)
-    ev.complete(
-        job_id,
-        results={
-            "benchmark": benchmark,
-            "baseline_accuracy": 0.0,  # filled by real runs vs always-slow / always-fast / LBR
-            "router_accuracy": 0.0,
-            "tokens_generated": 0,
-            "gpu_seconds": 0.0,
-            "p95_latency_ms": 0.0,
-        },
-    )
+def benchmarks() -> list[dict]:
+    try:
+        m = manifest()
+    except FileNotFoundError:
+        return []
+    return [{"name": k, "group": v["group"], "splits": {s: i["n"] for s, i in v["splits"].items()}}
+            for k, v in m["benchmarks"].items()]
+
+
+def create(session: Session, body: EvalCreate, background: BackgroundTasks) -> EvalRun:
+    sizes = {b["name"]: b["splits"] for b in benchmarks()}
+    if body.benchmark not in sizes:
+        raise HTTPException(422, f"unknown benchmark '{body.benchmark}'; options: {sorted(sizes)}")
+    if body.split not in sizes[body.benchmark]:
+        raise HTTPException(422, f"'{body.benchmark}' has splits {sorted(sizes[body.benchmark])}")
+    total = sizes[body.benchmark][body.split]
+    run = EvalRun(benchmark=body.benchmark, split=body.split, n_items=min(body.n or total, total),
+                  status="queued", progress=0.0, baseline=body.baseline,
+                  router_config=settings.router_settings().to_dict(), git_commit=_git_commit())
+    session.add(run)
+    session.commit()
+    dispatch(run.id, background)
+    return run
+
+
+def dispatch(run_id: int, background: BackgroundTasks) -> None:
+    if config.eval_executor == "inline":
+        background.add_task(jobs.run_eval, run_id)
+        return
+    from redis import Redis
+    from rq import Queue
+
+    Queue(config.eval_queue, connection=Redis.from_url(config.redis_url)).enqueue(
+        "backend.jobs.run_eval", run_id, job_timeout=6 * 3600, result_ttl=86400)
+
+
+def to_out(r: EvalRun) -> dict:
+    return {"id": r.id, "benchmark": r.benchmark, "split": r.split, "n_items": r.n_items,
+            "status": r.status, "progress": r.progress, "baseline": r.baseline,
+            "router_config": r.router_config, "summary": r.summary,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None}
+
+
+def results_csv(session: Session, run_id: int) -> str:
+    cols = ["item_id", "route", "conflict_score", "probe_score", "disagreement", "logprob_confidence",
+            "threshold", "reuse_method", "gold", "fast_correct", "correct", "lure_hit", "total_tokens",
+            "total_latency_ms", "total_gpu_seconds"]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(cols)
+    for r in session.scalars(select(Request).where(Request.eval_run_id == run_id).order_by(Request.id)):
+        w.writerow([getattr(r, c) for c in cols])
+    return buf.getvalue()

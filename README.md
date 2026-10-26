@@ -16,14 +16,14 @@ answers first; a conflict score decides when to escalate to slow reasoning.
 ## Layout
 
 ```
-backend/   FastAPI gateway (router is a placeholder until F5)
-engine/    Router engine: probe, conflict score, controller, reuse (F4-F6, GPU)
+backend/   FastAPI gateway: API, persistence, metrics, eval jobs
+engine/    Router interface, placeholder router, grading, data splits; real router from F4
 frontend/  Web UI
 data/      download_datasets.py, extract_hagendorff.py; raw/ is git-ignored
 scripts/   check_services.py
 migrations/ Alembic database migrations
 tests/     pytest suite
-docker-compose.yml   PostgreSQL + Redis (localhost only)
+docker-compose.yml   PostgreSQL + Redis + RQ worker (localhost only)
 ```
 
 ## Setup (Windows cmd)
@@ -40,6 +40,29 @@ uvicorn backend.main:app --reload --port 8000
 ```
 
 UI: http://localhost:8000 · API docs: http://localhost:8000/docs
+
+## API (F2)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v1/chat/completions` | OpenAI-compatible chat; response adds route, conflict score, paths |
+| GET | `/v1/metrics` | Dashboard metrics from the DB (`?source=playground` or `?eval_run_id=`) |
+| GET | `/v1/requests` | Recent routed requests |
+| GET | `/v1/benchmarks` | Benchmarks and split sizes |
+| POST | `/v1/eval` | Start a benchmark run: `{benchmark, split, n, baseline}` |
+| GET | `/v1/eval`, `/v1/eval/{id}` | Run list / status + summary (accuracy, AUROC, GPU-s, p95) |
+| GET | `/v1/eval/{id}/results.csv` | Per-item results for the paper |
+| GET/PUT | `/v1/settings` | Router settings (validated, saved, reloaded on restart) |
+| GET | `/v1/system` | Postgres / Redis / worker status |
+
+Until F5 the router is a **placeholder**: every response has `"simulated": true`.
+None of its numbers are research results.
+
+Benchmark jobs run in the Docker `worker` service (RQ needs Linux). After changing
+backend or engine code: `docker compose restart worker`. To run jobs inside the API
+process instead, set `MB_EVAL_EXECUTOR=inline` in `.env`.
+
+Tests use a separate `manobuddhi_test` database, created automatically.
 
 ## Data
 
@@ -71,8 +94,8 @@ items = load_split("gsm8k", "test")
 |---|---|---|---|
 | F0 Foundations | 1 | No | Done |
 | F1 Data layer (splits, DB schema) | 1-2 | No | Done |
-| F2 API gateway + placeholder router | 2-3 | No | Next |
-| F3 Frontend wired to API | 3-4 | No | — |
+| F2 API gateway + placeholder router | 2-3 | No | Done |
+| F3 Frontend wired to API | 3-4 | No | Next |
 | F4 Model serving + telemetry + baselines | 3-5 | Yes | — |
 | F5 Real router engine | 4-9 | Yes | — |
 | Patent gate (provisional filing) | 10-11 | — | — |

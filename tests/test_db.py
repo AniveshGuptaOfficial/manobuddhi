@@ -2,23 +2,14 @@
 import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from backend.config import PROJECT_ROOT
-from backend.db import SessionLocal, engine
+from backend.db import SessionLocal
 from backend.db_models import EvalRun, PathTelemetry, Request
+from tests.conftest import needs_db
 
-
-def _db_up() -> bool:
-    try:
-        with engine.connect() as c:
-            c.execute(text("select 1"))
-        return True
-    except Exception:  # noqa: BLE001
-        return False
-
-
-pytestmark = pytest.mark.skipif(not _db_up(), reason="PostgreSQL not reachable")
+pytestmark = needs_db
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +24,7 @@ def test_models_match_migrations(alembic_cfg):
     command.check(alembic_cfg)  # raises if db_models.py and the migrations disagree
 
 
-def test_insert_and_read(alembic_cfg):
+def test_insert_and_read(alembic_cfg, clean_db):
     with SessionLocal() as s:
         run = EvalRun(benchmark="gsm8k", split="test", n_items=1, status="running", progress=0.0,
                       router_config={"mode": "small_large", "k": 3}, baseline="manobuddhi")

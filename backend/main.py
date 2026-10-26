@@ -1,25 +1,41 @@
-"""ManoBuddhi FastAPI application."""
-
-from fastapi import BackgroundTasks, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+"""ManoBuddhi FastAPI application (F2: API gateway)."""
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from . import eval as eval_module
-from . import metrics as metrics_module
-from . import models as models_module
-from . import router as router_module
-from . import settings as settings_module
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
-app = FastAPI(title="ManoBuddhi - Dual-Process LLM Inference Router")
+from engine.interface import RouteRequest
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings_module.config.cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+from . import eval as evals
+from . import metrics, settings
+from .config import config
+from .db import SessionLocal, engine, get_session
+from .db_models import EvalRun, Request
+from .models import ChatRequest, EvalCreate
+from .persistence import display_answer, save_result
+from .router import active_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        with SessionLocal() as s:
+            settings.load_latest(s)
+    except Exception:  # noqa: BLE001  DB down: start with .env defaults; /v1/system shows it
+        pass
+    yield
+
+
+app = FastAPI(title="ManoBuddhi - Dual-Process LLM Inference Router", version="0.2.0",
+              lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=config.cors_origins, allow_methods=["*"],
+                   allow_headers=["*"])
 
 
 @app.get("/health")
@@ -27,117 +43,137 @@ def health() -> dict:
     return {"status": "ok", "service": "manobuddhi-router"}
 
 
-@app.post("/v1/chat/completions", response_model=models_module.ChatResponse)
-def chat_completions(payload: models_module.ChatRequest, background: BackgroundTasks) -> dict:
-    scorer = router_module.ConflictScorer()
-    conflict_score = payload.conflict_score
-    if conflict_score is None:
-        conflict_score = scorer.score(
-            question=payload.query,
-            fast_answers=["stub-fast-answer"],
-            probe_answer="stub-probe-answer",
-            hidden_conf=0.3,
-        )
+# ---------------- chat ----------------
 
-    decision = router_module.Router().decide(
-        query=payload.query,
-        conflict_score=conflict_score,
-        latency_budget_ms=payload.latency_budget_ms,
-        threshold_mode=payload.threshold_mode,
-        fixed_threshold=payload.fixed_threshold,
-    )
-    response = router_module.run_chat(
-        query=payload.query,
-        conflict_score=conflict_score,
-        latency_budget_ms=payload.latency_budget_ms,
-        threshold_mode=payload.threshold_mode,
-        fixed_threshold=payload.fixed_threshold,
-    )
-    response.update(decision)
-
-    metrics_module.metrics.record(
-        route=response["route"],
-        tokens=response["tokens_generated"],
-        latency_ms=response["latency_ms"],
-        gpu_seconds=response["gpu_seconds"],
-    )
-
+@app.post("/v1/chat/completions")
+def chat_completions(body: ChatRequest, s: Session = Depends(get_session)) -> dict:
+    if body.stream:
+        raise HTTPException(400, "stream=true is not supported yet")
+    q = body.user_text()
+    if not q:
+        raise HTTPException(422, "send `messages` with a user message, or `query`")
+    rs = settings.router_settings({"latency_budget_ms": body.latency_budget_ms,
+                                   "threshold_mode": body.threshold_mode,
+                                   "fixed_threshold": body.fixed_threshold, "mode": body.mode})
+    res = active_router(rs.backend).route(RouteRequest(q, rs))
+    req = save_result(s, res, query=q, settings=rs, source="playground")
+    final_model = rs.slow_model if res.route == "escalated" else rs.fast_model
+    completion = res.completion_tokens
     return {
-        "route": response["route"],
-        "content": response["content"],
-        "conflict_score": response["conflict_score"],
-        "probe_score": 0.3,
-        "threshold": response["threshold"],
-        "escalated": response["escalated"],
-        "escalation_source": response["escalation_source"],
-        "mode": response["mode"],
-        "tokens_generated": response["tokens_generated"],
-        "latency_ms": response["latency_ms"],
-        "gpu_seconds": response["gpu_seconds"],
+        # OpenAI-compatible part
+        "id": f"mb-{req.id}", "object": "chat.completion", "created": int(time.time()),
+        "model": final_model,
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": res.final_answer},
+                     "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": res.total_tokens - completion, "completion_tokens": completion,
+                  "total_tokens": res.total_tokens},
+        # ManoBuddhi routing details (used by the Playground + Conflict Inspector)
+        "request_id": req.id, "route": res.route, "content": res.final_answer,
+        "fast_answer": res.fast_answer, "slow_answer": res.slow_answer,
+        "conflict_score": res.conflict_score, "probe_score": res.probe_score,
+        "disagreement": res.disagreement, "k_samples": rs.k_fast_samples,
+        "confidence": res.logprob_confidence, "threshold": res.threshold,
+        "threshold_mode": res.threshold_mode, "latency_budget_ms": rs.latency_budget_ms,
+        "reuse_method": res.reuse_method, "latency_ms": res.total_latency_ms,
+        "gpu_seconds": res.total_gpu_seconds, "router_backend": res.backend, "simulated": res.simulated,
+        "paths": [{"path": p.path, "model": p.model, "completion_tokens": p.completion_tokens,
+                   "reused_tokens": p.reused_tokens, "ttft_ms": p.ttft_ms, "latency_ms": p.latency_ms,
+                   "gpu_seconds": p.gpu_seconds} for p in res.paths],
     }
 
 
-@app.get("/v1/metrics", response_model=models_module.MetricsResponse)
-def get_metrics() -> dict:
-    return metrics_module.metrics.snapshot().model_dump()
+# ---------------- metrics + request log ----------------
+
+@app.get("/v1/metrics")
+def get_metrics(source: str | None = None, eval_run_id: int | None = None,
+                s: Session = Depends(get_session)) -> dict:
+    return metrics.compute(s, source=source, eval_run_id=eval_run_id)
 
 
-@app.post("/v1/eval", response_model=models_module.EvalJobResponse)
-def create_eval(payload: dict, background: BackgroundTasks) -> models_module.EvalJobResponse:
-    benchmark = payload.get("benchmark", "GSM8K")
-    job = eval_module.eval_manager.create(benchmark=benchmark)
-    background.add_task(eval_module.simulate_benchmark_run, job.job_id, benchmark)
-    return job
+@app.get("/v1/requests")
+def recent_requests(limit: int = Query(50, ge=1, le=500), source: str | None = None,
+                    s: Session = Depends(get_session)) -> list[dict]:
+    stmt = select(Request).order_by(Request.id.desc()).limit(limit)
+    if source:
+        stmt = stmt.where(Request.source == source)
+    return [{"id": r.id, "created_at": r.created_at.isoformat() if r.created_at else None,
+             "source": r.source, "query": r.query[:300], "route": r.route,
+             "conflict_score": r.conflict_score, "threshold": r.threshold,
+             "latency_ms": r.total_latency_ms, "tokens": r.total_tokens,
+             "gpu_seconds": r.total_gpu_seconds, "answer": display_answer(r.final_answer),
+             "correct": r.correct} for r in s.scalars(stmt)]
 
 
-@app.get("/v1/eval/{job_id}", response_model=models_module.EvalJobResponse)
-def get_eval(job_id: str) -> dict:
-    job = eval_module.eval_manager.get(job_id)
-    if job is None:
-        return JSONResponse(status_code=404, content={"detail": "job not found"})
-    return job.model_dump()
+# ---------------- benchmarks + eval ----------------
+
+@app.get("/v1/benchmarks")
+def list_benchmarks() -> list[dict]:
+    return evals.benchmarks()
 
 
-@app.get("/v1/settings", response_model=models_module.SettingsResponse)
+@app.post("/v1/eval")
+def create_eval(body: EvalCreate, background: BackgroundTasks, s: Session = Depends(get_session)) -> dict:
+    return evals.to_out(evals.create(s, body, background))
+
+
+@app.get("/v1/eval")
+def list_evals(limit: int = Query(50, ge=1, le=500), s: Session = Depends(get_session)) -> list[dict]:
+    return [evals.to_out(r) for r in s.scalars(select(EvalRun).order_by(EvalRun.id.desc()).limit(limit))]
+
+
+@app.get("/v1/eval/{run_id}")
+def get_eval(run_id: int, s: Session = Depends(get_session)) -> dict:
+    r = s.get(EvalRun, run_id)
+    if r is None:
+        raise HTTPException(404, "eval run not found")
+    return evals.to_out(r)
+
+
+@app.get("/v1/eval/{run_id}/results.csv", response_class=PlainTextResponse)
+def eval_csv(run_id: int, s: Session = Depends(get_session)) -> PlainTextResponse:
+    if s.get(EvalRun, run_id) is None:
+        raise HTTPException(404, "eval run not found")
+    return PlainTextResponse(evals.results_csv(s, run_id), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="manobuddhi-eval-{run_id}.csv"'})
+
+
+# ---------------- settings ----------------
+
+@app.get("/v1/settings")
 def get_settings() -> dict:
-    cfg = settings_module.config
-    return {
-        "mode": cfg.mode,
-        "fast_model": cfg.fast_model,
-        "slow_model": cfg.slow_model,
-        "threshold_mode": cfg.threshold_mode,
-        "fixed_threshold": cfg.fixed_threshold,
-        "default_latency_budget_ms": cfg.default_latency_budget_ms,
-        "k_fast_samples": cfg.k_fast_samples,
-    }
+    return settings.snapshot()
 
 
-@app.put("/v1/settings", response_model=models_module.SettingsResponse)
-def put_settings(payload: dict) -> dict:
-    cfg = settings_module.config
-    if "mode" in payload:
-        cfg.mode = str(payload["mode"])
-    if "fast_model" in payload:
-        cfg.fast_model = str(payload["fast_model"])
-    if "slow_model" in payload:
-        cfg.slow_model = str(payload["slow_model"])
-    if "threshold_mode" in payload:
-        cfg.threshold_mode = str(payload["threshold_mode"])
-    if "fixed_threshold" in payload:
-        cfg.fixed_threshold = float(payload["fixed_threshold"])
-    if "default_latency_budget_ms" in payload:
-        cfg.default_latency_budget_ms = float(payload["default_latency_budget_ms"])
-    if "k_fast_samples" in payload:
-        cfg.k_fast_samples = int(payload["k_fast_samples"])
-    return {
-        "mode": cfg.mode,
-        "fast_model": cfg.fast_model,
-        "slow_model": cfg.slow_model,
-        "threshold_mode": cfg.threshold_mode,
-        "fixed_threshold": cfg.fixed_threshold,
-        "default_latency_budget_ms": cfg.default_latency_budget_ms,
-        "k_fast_samples": cfg.k_fast_samples,
-    }
+@app.put("/v1/settings")
+def put_settings(body: settings.SettingsUpdate, s: Session = Depends(get_session)) -> dict:
+    settings.apply(body.model_dump(exclude_none=True))
+    settings.save(s)
+    return settings.snapshot()
 
 
-app.mount("/", StaticFiles(directory=str(Path(__file__).resolve().parent.parent / "frontend"), html=True), name="frontend")
+# ---------------- system status ----------------
+
+@app.get("/v1/system")
+def system_status() -> dict:
+    out = {"router_backend": config.router_backend, "eval_executor": config.eval_executor,
+           "splits_ready": bool(evals.benchmarks())}
+    try:
+        with engine.connect() as c:
+            out["postgres"] = {"ok": True, "requests_rows": c.execute(text("select count(*) from requests")).scalar()}
+    except Exception as e:  # noqa: BLE001
+        out["postgres"] = {"ok": False, "error": str(e).splitlines()[0]}
+    try:
+        from redis import Redis
+        from rq import Queue, Worker
+
+        r = Redis.from_url(config.redis_url, socket_connect_timeout=2)
+        r.ping()
+        out["redis"] = {"ok": True, "queue_length": len(Queue(config.eval_queue, connection=r)),
+                        "workers": len(Worker.all(connection=r))}
+    except Exception as e:  # noqa: BLE001
+        out["redis"] = {"ok": False, "error": str(e).splitlines()[0]}
+    return out
+
+
+app.mount("/", StaticFiles(directory=str(Path(__file__).resolve().parent.parent / "frontend"), html=True),
+          name="frontend")
