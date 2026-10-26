@@ -3,6 +3,11 @@
 Split roles
   probe_train : fast-model runs on these produce the hidden-state probe's training data (O1)
   calib       : learn-then-test certified set, 500 items, never used for training (O3)
+                GSM8K: drawn from the TEST source (first 500 test items), because the models
+                have seen GSM8K train (F4: fast-model error 15% on train-split calib vs 29% on
+                test), and a threshold calibrated on another distribution does not transfer.
+  calib_train : GSM8K only - the original 500-item calib from the train pool, kept for the
+                train/test shift analysis; not used for thresholds
   dev         : trap sets only; for choosing probe layer / K without touching test
   test        : reported numbers only
 
@@ -28,7 +33,7 @@ CALIB_N = 500
 
 BENCHMARKS = {
     # name: (group, splits)
-    "gsm8k": ("core", ["probe_train", "calib", "test"]),
+    "gsm8k": ("core", ["probe_train", "calib", "test", "calib_train"]),
     "math": ("core", ["probe_train", "calib", "test"]),
     "strategyqa": ("core", ["probe_train", "calib", "test"]),
     "commonsenseqa": ("core", ["probe_train", "calib", "test"]),
@@ -128,6 +133,13 @@ def build_all() -> dict:
         out[name], removed[name] = _pool_split(name, pool, tests[name], exclude, probe_cap=cap)
     report["leakage"]["removed_from_training_pools"] = removed
 
+    # GSM8K: calibrate on the test distribution (see docstring). The first CALIB_N test items
+    # (source order) become calib - the same items the F4 run r1 reported as test[:500].
+    g = out["gsm8k"]
+    g["calib_train"] = g["calib"]
+    g["calib"], g["test"] = tests["gsm8k"][:CALIB_N], tests["gsm8k"][CALIB_N:]
+    report["gsm8k_calib_source"] = "test[:500]; calib_train = former train-pool calib"
+
     # write + verify
     for name in BENCHMARKS:
         splits = out[name]
@@ -147,7 +159,7 @@ def build_all() -> dict:
                                       "cross_split_overlap": overlap}
 
     train_keys = {norm_text(it["question"]) for b in out.values()
-                  for s in ("probe_train", "calib") for it in b.get(s, [])}
+                  for s in ("probe_train", "calib", "calib_train") for it in b.get(s, [])}
     eval_keys = {norm_text(it["question"]) for b in out.values()
                  for s in ("test", "dev") for it in b.get(s, [])}
     report["leakage"]["train_or_calib_in_any_eval"] = len(train_keys & eval_keys)

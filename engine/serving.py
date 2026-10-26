@@ -56,6 +56,7 @@ class Generation:
     first_token_entropy: float | None = None
     thinking: bool | None = None
     reasoning_tokens: int | None = None  # tokens before </think> (Config A think mode)
+    sampled: bool = False  # True: sampled decoding (no log-prob confidence)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -186,9 +187,12 @@ class HFModel:
     # ---------------------------------------------------------------- generation
     @torch.inference_mode()
     def generate(self, prompts: list[str], *, max_new_tokens: int = 512,
-                 thinking: bool | None = None, timed: bool = True) -> list[tuple[Generation, list[int], list[int]]]:
-        """Greedy generation. Returns, per prompt, (Generation, prompt_ids, completion_ids).
-        timed=True needs a single prompt: batch 1 is what a live query costs."""
+                 thinking: bool | None = None, timed: bool = True, sampling: dict | None = None,
+                 seed: int | None = None) -> list[tuple[Generation, list[int], list[int]]]:
+        """Greedy generation unless `sampling` is given (e.g. Qwen3 thinking mode, where greedy
+        decoding can repeat endlessly). Returns, per prompt, (Generation, prompt_ids,
+        completion_ids). timed=True needs a single prompt: batch 1 is what a live query costs.
+        Sampled runs carry no log-prob confidence (only the greedy fast path needs it)."""
         if timed and len(prompts) != 1:
             raise ValueError("timed generation runs one prompt at a time (batch 1)")
         texts = [self.chat_text(p, thinking) for p in prompts]
@@ -196,12 +200,20 @@ class HFModel:
         enc = {k: v.to(self.input_device) for k, v in enc.items()}
         rec = _StepLogprobs()
         timer = _FirstTokenTimer() if timed else None
+        if sampling:
+            if seed is not None:
+                torch.manual_seed(seed)
+            dec = dict(do_sample=True, temperature=sampling.get("temperature", 0.6),
+                       top_p=sampling.get("top_p", 0.95), top_k=sampling.get("top_k", 20))
+            procs = LogitsProcessorList()
+        else:
+            dec = dict(do_sample=False, temperature=None, top_p=None, top_k=None)
+            procs = LogitsProcessorList([rec])
         with self.meter.measure(self.devices) as m:
             out = self.model.generate(
-                **enc, max_new_tokens=max_new_tokens, do_sample=False, temperature=None,
-                top_p=None, top_k=None, repetition_penalty=1.0, num_beams=1,
+                **enc, max_new_tokens=max_new_tokens, repetition_penalty=1.0, num_beams=1,
                 pad_token_id=self.tok.pad_token_id, eos_token_id=self.eos_ids,
-                logits_processor=LogitsProcessorList([rec]), streamer=timer)
+                logits_processor=procs, streamer=timer, **dec)
         t0_wall = m.wall_s
         plen = enc["input_ids"].shape[1]
         gen = out[:, plen:].tolist()
@@ -222,7 +234,7 @@ class HFModel:
             visible, _ = split_thinking(raw)
             g = Generation(model=self.name, text=visible, raw_text=raw, prompt_tokens=len(prompt_ids),
                            completion_tokens=n_gen, finished=finished, devices=self.devices,
-                           thinking=thinking, timed=timed)
+                           thinking=thinking, timed=timed, sampled=bool(sampling))
             if steps is not None and comp:
                 lps = steps[: len(comp), b].tolist()
                 g.mean_logprob = sum(lps) / len(lps)

@@ -33,11 +33,13 @@ class ModelPair:
     slow: HFModel | None
     fast_thinking: bool | None = None
     slow_thinking: bool | None = None
+    slow_sampling: dict | None = None  # Qwen3 thinking: sample, never greedy (Qwen guidance)
 
     def describe(self) -> dict:
         return {"mode": self.mode, "fast": self.fast.describe(),
                 "slow": self.slow.describe() if self.slow else None,
-                "fast_thinking": self.fast_thinking, "slow_thinking": self.slow_thinking}
+                "fast_thinking": self.fast_thinking, "slow_thinking": self.slow_thinking,
+                "slow_sampling": self.slow_sampling}
 
 
 def load_pair(mode: str = "small_large", *, fast_model: str = "Qwen/Qwen2.5-1.5B-Instruct",
@@ -53,7 +55,8 @@ def load_pair(mode: str = "small_large", *, fast_model: str = "Qwen/Qwen2.5-1.5B
     meter = meter or GpuMeter()
     if mode == "single_model_nothink_think":
         m = HFModel(slow_model, device=fast_device, meter=meter)
-        return ModelPair(mode, m, m, fast_thinking=False, slow_thinking=True)
+        return ModelPair(mode, m, m, fast_thinking=False, slow_thinking=True,
+                         slow_sampling={"temperature": 0.6, "top_p": 0.95, "top_k": 20})
     fast = HFModel(fast_model, device=fast_device, meter=meter)
     if not with_slow:
         return ModelPair(mode, fast, None)
@@ -81,6 +84,13 @@ def environment(meter) -> dict:
     return {"python": platform.python_version(), "torch": torch.__version__,
             "cuda": torch.version.cuda, "transformers": transformers.__version__,
             "hardware": meter.hardware(), "platform": platform.platform()}
+
+
+def _seed(item_id: str) -> int:
+    """Per-item seed for sampled (thinking) runs: same item -> same sample, across resumes."""
+    import hashlib
+
+    return int(hashlib.sha256(item_id.encode()).hexdigest()[:8], 16)
 
 
 def warmup(pair: ModelPair, log=print) -> None:
@@ -166,7 +176,8 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
             slow_gen = None
             if "slow" in paths:
                 slow_gen = pair.slow.generate([prompt], max_new_tokens=max_new_slow,
-                                              thinking=pair.slow_thinking)[0][0]
+                                              thinking=pair.slow_thinking, sampling=pair.slow_sampling,
+                                              seed=_seed(it["id"]))[0][0]
             recs.append(_record(it, prompt, fast_gen, slow_gen, probe_cost))
         run.append_shard(benchmark, split, recs, feats if hidden and feats else None)
         n_new += len(recs)
@@ -174,9 +185,11 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
         left = (len(todo) - n_new) * el / n_new
         fa = [r["fast_correct"] for r in recs if r["fast_correct"] is not None]
         sa = [r["slow_correct"] for r in recs if r["slow_correct"] is not None]
+        cut = [r for r in recs if r["slow"] and not r["slow"]["finished"]]
         log(f"  {len(done) + n_new}/{len(items)}  {el / n_new:.1f}s/item  ETA {left / 60:.0f} min"
             + (f"  fast acc {sum(fa) / len(fa):.2f}" if fa else "")
-            + (f"  slow acc {sum(sa) / len(sa):.2f}" if sa else ""))
+            + (f"  slow acc {sum(sa) / len(sa):.2f}" if sa else "")
+            + (f"  slow hit max tokens {len(cut)}/{len(recs)}" if cut else ""))
         info["n_done"] = len(done) + n_new
         run.update_manifest(collections={key(benchmark, split): info})
 

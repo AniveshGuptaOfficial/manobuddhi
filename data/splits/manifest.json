@@ -11,11 +11,15 @@
         },
         "calib": {
           "n": 500,
-          "sha256": "7f38f14974a7c186d46469943eef8174f6ca799d1e27cea9fa1235c8a0d59763"
+          "sha256": "0b46e4666680d2194dded1e2ce247e88a9bb81946e00c8e28d6f667c212697f4"
         },
         "test": {
-          "n": 1319,
-          "sha256": "bf4091c52e1692d7b4ab7d1f7ce0ab4f0a9838c657cdf1e9a31bdde7bd995b37"
+          "n": 819,
+          "sha256": "d520e8bd64efa89a6c5d75101d32298b23b72597e7aaceded01eacc9d4e6e873"
+        },
+        "calib_train": {
+          "n": 500,
+          "sha256": "a86813a6d3d49c186e3e48937f3329d2624129e9626d9ba8000fa24111454a1a"
         }
       },
       "cross_split_overlap": 0
@@ -174,5 +178,6 @@
       "nq_open": 0
     },
     "train_or_calib_in_any_eval": 0
-  }
+  },
+  "gsm8k_calib_source": "test[:500]; calib_train = former train-pool calib"
 }
