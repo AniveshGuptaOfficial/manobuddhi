@@ -130,6 +130,8 @@ def collect(run: RunDir, pair: ModelPair, benchmark: str, split: str, *, n: int 
     if shard:  # (i, k): this process takes items i, i+k, i+2k, ... (one process per GPU)
         items = items[shard[0]::shard[1]]
     done = {r["id"] for r in run.load_records(benchmark, split)}
+    if hidden and done:  # an item only counts as done if its probe features were saved too
+        done &= set(run.load_features(benchmark, split)[0])
     todo = [it for it in items if it["id"] not in done]
     layers = layers or default_layers(pair.fast.n_layers)
 

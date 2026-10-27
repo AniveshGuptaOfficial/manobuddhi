@@ -39,7 +39,10 @@ class RunDir:
 
     def manifest(self) -> dict:
         if self.manifest_path.exists():
-            return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            try:
+                return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:  # snapshot taken mid-write: rebuilt on the next update
+                return {}
         return {}
 
     def update_manifest(self, **fields) -> dict:
@@ -65,8 +68,17 @@ class RunDir:
         p = self.records_path(benchmark, split)
         if not p.exists():
             return []
+        out = {}
         with open(p, encoding="utf-8") as f:
-            return [json.loads(line) for line in f if line.strip()]
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:  # half-written last line from a snapshot: skip, redo
+                    continue
+                out[r["id"]] = r  # a re-collected item replaces its earlier record
+        return list(out.values())
 
     def collections(self) -> list[tuple[str, str]]:
         d = self.path / "records"
@@ -103,7 +115,11 @@ class RunDir:
         done = {r["id"] for r in self.load_records(benchmark, split)}
         ids, cols, seen = [], {}, set()
         for f in sorted(hdir.glob("*.npz")) if hdir.exists() else []:
-            z = np.load(f)
+            try:
+                z = np.load(f)
+                z.files  # noqa: B018  (forces the zip index to be read)
+            except Exception:  # noqa: BLE001  half-written shard from a snapshot: skip, redo
+                continue
             keep = [i for i, x in enumerate(z["ids"].tolist()) if x in done and x not in seen]
             if not keep:
                 continue
