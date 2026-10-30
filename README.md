@@ -93,12 +93,39 @@ items = load_split("gsm8k", "test")
 Real models run on Kaggle (2x T4, float16), not on the PC. Fast: Qwen2.5-1.5B-Instruct on GPU 0.
 Slow: Qwen2.5-7B-Instruct split across both GPUs (about 15 GB in float16 does not fit one T4).
 
+### Automated CLI Workflow (Recommended)
+
+Run the entire pipeline without opening the Kaggle web UI or touching the notebook manually:
+
+1. Provide Kaggle credentials via `~/.kaggle/kaggle.json` or in `.env` (`KAGGLE_USERNAME`, `KAGGLE_KEY`).
+2. Run end-to-end (pushes kernel, monitors execution, downloads output, and imports into database):
+
+```cmd
+python scripts\run_kaggle.py run --profile smoke --config B --auto-import
+```
+
+Or step-by-step:
+
+```cmd
+python scripts\run_kaggle.py push --profile checkpoint --config B
+python scripts\run_kaggle.py status
+python scripts\run_kaggle.py fetch --run r1 --auto-import
+```
+
+For local or direct GPU machine execution (no Kaggle needed):
+
+```cmd
+python scripts\f4.py pipeline --run r1-smoke --profile smoke --import-db
+```
+
+### Manual Kaggle Web UI Workflow
+
 1. Upload `notebooks/f4_kaggle.ipynb` to Kaggle (keep it **Private**), set GPU T4 x2 and Internet on,
    add the `GITHUB_TOKEN` secret (read-only, this repo only).
 2. Run with `PROFILE = "smoke"` (about 20 min), then `"checkpoint"` via Save & Run All (Commit), about 6-8 h.
 3. Download `f4_<run>.zip` from Output, unzip into `results\`, then:
 
-```
+```cmd
 python scripts\f4.py report --run r1
 python scripts\import_results.py results\r1
 ```

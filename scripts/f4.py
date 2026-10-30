@@ -88,6 +88,17 @@ def main(argv=None):
     r.add_argument("--run", required=True)
     r.add_argument("--benchmark", default="gsm8k")
 
+    p = sub.add_parser("pipeline", help="run complete F4 pipeline end-to-end (GPU collection -> probe -> baselines -> report)")
+    p.add_argument("--run", required=True)
+    p.add_argument("--profile", default="smoke", choices=["smoke", "checkpoint", "full"])
+    p.add_argument("--config", default="B", choices=["A", "B"])
+    p.add_argument("--fast-model", default="Qwen/Qwen2.5-1.5B-Instruct")
+    p.add_argument("--slow-model", default="Qwen/Qwen2.5-7B-Instruct")
+    p.add_argument("--slow-quant", default="none", choices=["none", "8bit", "4bit"])
+    p.add_argument("--slow-max-memory", default="0:4GiB,1:12GiB")
+    p.add_argument("--no-traps", action="store_true")
+    p.add_argument("--import-db", action="store_true", help="import into PostgreSQL when done")
+
     a = ap.parse_args(argv)
     run = RunDir(Path(a.results) / a.run)
     if a.cmd == "collect":
@@ -123,6 +134,29 @@ def main(argv=None):
         pipeline.baselines(run, a.benchmark, a.calib, a.test, tol=a.tol, conf_key=a.conf)
     elif a.cmd == "report":
         print(pipeline.report(run, a.benchmark))
+    elif a.cmd == "pipeline":
+        from scripts.f4_kaggle import main as run_f4_standalone
+        f4_argv = [
+            "--config", a.config,
+            "--profile", a.profile,
+            "--run", a.run,
+            "--fast-model", a.fast_model,
+            "--slow-model", a.slow_model,
+            "--slow-quant", a.slow_quant,
+            "--slow-max-memory", a.slow_max_memory,
+            "--out-dir", a.results,
+            "--local"
+        ]
+        if a.no_traps:
+            f4_argv.append("--no-traps")
+        run_f4_standalone(f4_argv)
+
+        if a.import_db:
+            from backend.db import SessionLocal
+            from backend.importer import import_run
+            with SessionLocal() as s:
+                runs = import_run(s, str(Path(a.results) / a.run), replace=True)
+            print(f"Successfully imported {len(runs)} eval runs into database!")
 
 
 if __name__ == "__main__":
