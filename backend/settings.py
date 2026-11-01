@@ -65,11 +65,16 @@ def apply(values: dict) -> None:
 
 def router_settings(overrides: dict | None = None) -> RouterSettings:
     d = snapshot()
-    d.update({k: v for k, v in (overrides or {}).items() if v is not None})
-    if "default_latency_budget_ms" in d:
-        d["latency_budget_ms"] = d.pop("default_latency_budget_ms")
-    if "router_backend" in d:
-        d["backend"] = d.pop("router_backend")
+    d["latency_budget_ms"] = d.pop("default_latency_budget_ms")
+    d["backend"] = d.pop("router_backend")
+    clean_overrides = {}
+    for k, v in (overrides or {}).items():
+        if v is not None:
+            if k == "router_backend":
+                clean_overrides["backend"] = v
+            else:
+                clean_overrides[k] = v
+    d.update(clean_overrides)
     return RouterSettings.from_dict(d)
 
 

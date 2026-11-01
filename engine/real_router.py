@@ -93,12 +93,16 @@ class RealRouter:
         if self.model_factory is not None:
             return self.model_factory(name, slow=slow)
 
-        import torch
+        try:
+            import torch
+            has_cuda = torch.cuda.is_available()
+        except ModuleNotFoundError:
+            has_cuda = False
 
-        if not torch.cuda.is_available():
+        if not has_cuda:
             raise RuntimeError(
                 "Real model inference requires a CUDA GPU. "
-                "This computer currently has CPU-only PyTorch. "
+                "This computer currently has CPU-only PyTorch or no PyTorch. "
                 "Use injected mock models for CPU tests."
             )
 

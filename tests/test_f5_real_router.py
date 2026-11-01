@@ -530,11 +530,13 @@ def test_model_factory_lazy_loading_and_force_routes():
 
 def test_cpu_hardware_guard_without_cuda(monkeypatch):
     """Verify attempting real HFModel creation on CPU raises informative RuntimeError."""
-    import torch
-
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-
     router = RealRouter(probe=FakeProbe(0.5))
+    try:
+        import torch
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    except ModuleNotFoundError:
+        pass
+
     with pytest.raises(RuntimeError, match="Real model inference requires a CUDA GPU"):
         router._create_model(A2_FAST_MODEL)
 
