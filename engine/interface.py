@@ -89,10 +89,26 @@ class RouteResult:
 
     @property
     def total_latency_ms(self) -> float:
-        """Wall-clock: K fast samples run in parallel with the fast answer; slow runs after."""
-        fast = max((p.latency_ms for p in self.paths if p.path in ("fast", "fast_sample")), default=0.0)
-        slow = sum(p.latency_ms for p in self.paths if p.path == "slow")
-        return fast + slow
+        """Estimated sequential wall-clock: fast generation + probe + slow generation."""
+        fast = max(
+            (
+                p.latency_ms
+                for p in self.paths
+                if p.path in ("fast", "fast_sample")
+            ),
+            default=0.0,
+        )
+        probe = sum(
+            p.latency_ms
+            for p in self.paths
+            if p.path == "probe"
+        )
+        slow = sum(
+            p.latency_ms
+            for p in self.paths
+            if p.path == "slow"
+        )
+        return fast + probe + slow
 
 
 class Router(Protocol):

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from engine.data import load_split
 from engine.interface import RouteRequest, RouterSettings
-from engine.placeholder import get_router
+from backend.router import active_router
 from engine.prompts import build_prompt
 
 from . import metrics
@@ -26,7 +26,7 @@ def run_eval(run_id: int) -> dict:
         try:
             items = load_split(run.benchmark, run.split)[: run.n_items]
             settings = RouterSettings.from_dict(run.router_config)
-            router = get_router(settings.backend)
+            router = active_router(settings.backend)
             force = FORCE[run.baseline or "manobuddhi"]
             for i, item in enumerate(items, 1):
                 prompt = build_prompt(item)

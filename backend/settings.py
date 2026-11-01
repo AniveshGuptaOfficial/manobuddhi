@@ -33,7 +33,7 @@ class SettingsModel(BaseModel):
     probe_layer: Literal["late", "middle", "aggregate"]
     reuse_kv_prefix: bool
     reuse_spec_draft: bool
-    router_backend: Literal["placeholder"]  # real backends are added in F4/F5
+    router_backend: Literal["placeholder", "real"]
 
 
 class SettingsUpdate(BaseModel):
@@ -50,7 +50,7 @@ class SettingsUpdate(BaseModel):
     probe_layer: Literal["late", "middle", "aggregate"] | None = None
     reuse_kv_prefix: bool | None = None
     reuse_spec_draft: bool | None = None
-    router_backend: Literal["placeholder"] | None = None
+    router_backend: Literal["placeholder", "real"] | None = None
 
 
 def snapshot() -> dict:
@@ -65,9 +65,11 @@ def apply(values: dict) -> None:
 
 def router_settings(overrides: dict | None = None) -> RouterSettings:
     d = snapshot()
-    d["latency_budget_ms"] = d.pop("default_latency_budget_ms")
-    d["backend"] = d.pop("router_backend")
     d.update({k: v for k, v in (overrides or {}).items() if v is not None})
+    if "default_latency_budget_ms" in d:
+        d["latency_budget_ms"] = d.pop("default_latency_budget_ms")
+    if "router_backend" in d:
+        d["backend"] = d.pop("router_backend")
     return RouterSettings.from_dict(d)
 
 
